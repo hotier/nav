@@ -178,7 +178,7 @@ async function main() {
     console.log("│  ⚠  Vercel 部署建议                                        │");
     console.log("│                                                            │");
     console.log("│  如需更强保障，请将此值添加到 Vercel Environment Variables：   │");
-    console.log(`│  AUTH_SECRET = ${process.env.AUTH_SECRET.substring(0, 12)}...  │");
+    console.log(`│  AUTH_SECRET = ${process.env.AUTH_SECRET.substring(0, 12)}...  │`);
     console.log("│  （已存 DB + 本地文件，不设置也能正常工作）                       │");
     console.log("└─────────────────────────────────────────────────────────────┘");
     console.log("");
@@ -246,9 +246,9 @@ async function main() {
   });
 
   console.log("✅ 管理员账号已创建");
-  console.log(`   用户名: admin`);
-  console.log(`   密码: ${fromEnv ? "（来自环境变量 ADMIN_PASSWORD）" : ADMIN_PASSWORD}`);
-  console.log(`   邮箱: ${ADMIN_EMAIL}`);
+  console.log("   用户名: admin");
+  console.log("   密码: " + (fromEnv ? "（来自环境变量 ADMIN_PASSWORD）" : ADMIN_PASSWORD));
+  console.log("   邮箱: " + ADMIN_EMAIL);
 
   if (!fromEnv) {
     console.log("   ⚠ 请妥善保管以上密码，本次部署后不再显示");
