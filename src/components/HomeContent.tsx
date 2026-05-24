@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { getCategories, getAllLinks } from "@/lib/queries";
 import { LinksGrid } from "@/components/LinksGrid";
+import { Home } from "lucide-react";
 import type { Category, Link as LinkType } from "@/types";
 
 export async function HomeContent() {
@@ -19,10 +20,13 @@ export async function HomeContent() {
     return (
       <>
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
-            style={{ fontFamily: "var(--font-space-grotesk)" }}>
-            全部书签<span className="ml-1.5 text-sm font-normal text-slate-400 dark:text-slate-500">(0)</span>
-          </h2>
+          <div className="flex items-center gap-2.5">
+            <Home className="h-6 w-6 text-slate-800 dark:text-white" />
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
+              style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              全部书签<span className="ml-1.5 text-sm font-normal text-slate-400 dark:text-slate-500">(0)</span>
+            </h2>
+          </div>
         </div>
         <div className="max-w-md mx-auto text-center py-16">
           <div className="text-5xl mb-4">📭</div>
@@ -42,10 +46,13 @@ export async function HomeContent() {
   return (
     <>
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
-          style={{ fontFamily: "var(--font-space-grotesk)" }}>
-          全部书签<span className="ml-1.5 text-sm font-normal text-slate-400 dark:text-slate-500">({linksData.length})</span>
-        </h2>
+        <div className="flex items-center gap-2.5">
+          <Home className="h-6 w-6 text-slate-800 dark:text-white" />
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
+            style={{ fontFamily: "var(--font-space-grotesk)" }}>
+            全部书签<span className="ml-1.5 text-sm font-normal text-slate-400 dark:text-slate-500">({linksData.length})</span>
+          </h2>
+        </div>
       </div>
       <LinksGrid
         links={linksData}

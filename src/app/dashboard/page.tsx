@@ -1,39 +1,91 @@
-import { auth } from "@/lib/auth";
-import { getDashboardLinks, getCategories } from "@/lib/queries";
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { AdminLayout } from "@/components/AdminLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Link2, Folder, Globe, Lock, Sparkles, Zap, TrendingUp, Archive } from "lucide-react";
+import { Link2, Folder, Globe, Lock, Sparkles, Zap, Archive } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
-async function getStats(userId: string) {
-  const [links, categories] = await Promise.all([
-    getDashboardLinks(userId),
-    getCategories(),
-  ]);
-
-  return {
-    totalLinks: links.length,
-    totalCategories: categories.length,
-    publicLinks: links.filter((l) => !l.isPrivate).length,
-    privateLinks: links.filter((l) => l.isPrivate).length,
-  };
+interface DashboardStats {
+  totalLinks: number;
+  totalCategories: number;
+  publicLinks: number;
+  privateLinks: number;
 }
 
-export default async function DashboardPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return null;
-  }
+const CACHE_KEY = "nav_dashboard_stats";
+const EMPTY: DashboardStats = { totalLinks: 0, totalCategories: 0, publicLinks: 0, privateLinks: 0 };
 
-  const stats = await getStats(session.user.id);
+export default function DashboardPage() {
+  const { data: session, status } = useSession();
+  const [stats, setStats] = useState<DashboardStats>(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      return cached ? JSON.parse(cached) : EMPTY;
+    } catch {
+      return EMPTY;
+    }
+  });
+  const [isFirstLoad, setIsFirstLoad] = useState(() => {
+    try {
+      return !localStorage.getItem(CACHE_KEY);
+    } catch {
+      return true;
+    }
+  });
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/dashboard/stats");
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        } catch { /* ignore */ }
+      }
+    } catch {
+      // 静默失败，已有缓存兜底
+    } finally {
+      setIsFirstLoad(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchStats();
+    }
+  }, [status, fetchStats]);
+
+  if (status === "loading") return null;
+
+  if (!session) return null;
+
+  const isEmpty = stats.totalLinks === 0 && stats.totalCategories === 0;
 
   return (
     <AdminLayout stats={stats}>
 
       <div className="dashboard-container space-y-8">
         {/* Stats Grid */}
+        {isFirstLoad && isEmpty ? (
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="stat-card p-6 animate-pulse">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700" />
+                  <div className="h-5 w-12 rounded-full bg-slate-200 dark:bg-slate-700" />
+                </div>
+                <div className="h-9 w-16 rounded bg-slate-200 dark:bg-slate-700 mb-2" />
+                <div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700" />
+                <div className="mt-4 pt-4 border-t border-border/50">
+                  <div className="h-4 w-full rounded bg-slate-200 dark:bg-slate-700" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="stagger-grid grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {/* Total Links */}
           <div className="stat-card p-6" style={{ "--icon-color": "#3b82f6" } as React.CSSProperties}>
@@ -127,6 +179,7 @@ export default async function DashboardPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Quick Actions */}
         <div className="animate-fade-in-up delay-300">
@@ -145,7 +198,7 @@ export default async function DashboardPage() {
                     <Link2 className="h-6 w-6 text-blue-500" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold mb-1 group-hover:text-blue-500 transition-colors">链接管理</h3>
+                    <h3 className="font-semibold mb-1 group-hover:text-blue-500 transition-colors" style={{ fontFamily: "var(--font-space-grotesk)" }}>链接管理</h3>
                     <p className="text-sm text-muted-foreground">添加、编辑、删除和整理你的书签链接</p>
                   </div>
                 </div>
@@ -168,7 +221,7 @@ export default async function DashboardPage() {
                     <Folder className="h-6 w-6 text-violet-500" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold mb-1 group-hover:text-violet-500 transition-colors">分类管理</h3>
+                    <h3 className="font-semibold mb-1 group-hover:text-violet-500 transition-colors" style={{ fontFamily: "var(--font-space-grotesk)" }}>分类管理</h3>
                     <p className="text-sm text-muted-foreground">创建分类结构，管理二级分类</p>
                   </div>
                 </div>
@@ -191,7 +244,7 @@ export default async function DashboardPage() {
                     <Zap className="h-6 w-6 text-emerald-500" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold mb-1 group-hover:text-emerald-500 transition-colors">导入导出</h3>
+                    <h3 className="font-semibold mb-1 group-hover:text-emerald-500 transition-colors" style={{ fontFamily: "var(--font-space-grotesk)" }}>导入导出</h3>
                     <p className="text-sm text-muted-foreground">从浏览器或其他平台导入书签</p>
                   </div>
                 </div>

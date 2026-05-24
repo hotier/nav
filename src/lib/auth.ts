@@ -112,12 +112,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
 
       // 每次请求验证 tokenVersion：改密码后强制退出当前及所有已登录设备
+      // 同时补 role 字段（旧 JWT 迁移场景）
       // 跳过首次登录（user 存在时刚写入，无需验证）和 profile 更新
+      // 优化：JWT 中有 tokenVersion 且距上次验证不足 5 分钟 → 跳过 DB 查询
       if (!user && trigger !== "update" && token.sub) {
+        const now = Math.floor(Date.now() / 1000);
+        const lastCheck = token.tokenVersionCheckedAt as number | undefined;
+        // 已有 tokenVersion 且在 5 分钟窗口内 → 信任缓存的 JWT，减轻 DB 压力
+        if (token.tokenVersion && lastCheck && now - lastCheck < 300) {
+          return token;
+        }
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.sub },
-            select: { tokenVersion: true },
+            select: { tokenVersion: true, role: true },
           });
           // 用户已被删除 → 销毁 token
           if (!dbUser) {
@@ -129,6 +137,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             console.warn(`[auth] tokenVersion 不匹配：${token.sub}`);
             return null;
           }
+          // 旧 JWT 没有 role → 补齐（一次 DB 查询同时获取）
+          if (!token.role) {
+            token.role = dbUser.role;
+          }
+          token.tokenVersionCheckedAt = now;
         } catch (error) {
           // 数据库查询失败（如 Neon 冷启动/超时）→ 保留现有 token，不强制退出
           console.error("[auth] tokenVersion 数据库查询失败，保留现有会话:", error);

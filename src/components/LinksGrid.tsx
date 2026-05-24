@@ -140,7 +140,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
   if (!isAdmin) {
     // Non-admin view - no drag and drop
     return (
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
         {links.map((link) => (
           <LinkCard
             key={link.id}
@@ -157,7 +157,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
   // Admin view - only render drag and drop after hydration to prevent mismatch
   if (!isHydrated) {
     return (
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
         {links.map((link) => (
           <LinkCard
             key={link.id}
@@ -181,7 +181,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={links} strategy={rectSortingStrategy}>
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
           {links.map((link) => (
             <LinkCard
               key={link.id}

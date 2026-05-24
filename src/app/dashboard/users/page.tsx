@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
-import { Users, Shield, Trash2, User, Loader2, AlertTriangle } from "lucide-react";
+import { Users, Shield, Trash2, User, Loader2, AlertTriangle, ChevronDown, Check } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,26 +36,51 @@ interface UserItem {
   _count: { links: number };
 }
 
+const CACHE_KEY = "nav_users_cache";
+
 export default function UsersPage() {
   const { data: session, status } = useSession();
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // 初始化时同步读取 localStorage，消除首次渲染的 0→真实数据跳动
+  const [users, setUsers] = useState<UserItem[]>(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isFirstLoad, setIsFirstLoad] = useState(() => {
+    try {
+      return !localStorage.getItem(CACHE_KEY);
+    } catch {
+      return true;
+    }
+  });
   const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [roleMenuUser, setRoleMenuUser] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [roleUpdating, setRoleUpdating] = useState<Record<string, boolean>>({});
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{
+    userId: string;
+    newRole: string;
+    name: string;
+  } | null>(null);
 
   const fetchUsers = useCallback(async () => {
-    setIsLoading(true);
     try {
       const res = await fetch("/api/users");
       if (res.ok) {
         const data = await res.json();
         setUsers(data);
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        } catch { /* ignore */ }
       }
     } catch {
-      toast.error("获取用户列表失败");
+      // 静默失败，已有缓存数据兜底
     } finally {
-      setIsLoading(false);
+      setIsFirstLoad(false);
     }
   }, []);
 
@@ -64,8 +90,7 @@ export default function UsersPage() {
     }
   }, [status, fetchUsers]);
 
-  const handleRoleToggle = async (userId: string, currentRole: string) => {
-    const newRole = currentRole === "admin" ? "user" : "admin";
+  const handleRoleToggle = async (userId: string, newRole: string) => {
     setRoleUpdating((prev) => ({ ...prev, [userId]: true }));
     try {
       const res = await fetch(`/api/users/${userId}`, {
@@ -75,9 +100,11 @@ export default function UsersPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === userId ? { ...u, role: data.role } : u))
-        );
+        setUsers((prev) => {
+          const next = prev.map((u) => (u.id === userId ? { ...u, role: data.role } : u));
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+          return next;
+        });
         toast.success(`角色已更新为 ${newRole === "admin" ? "管理员" : "普通用户"}`);
       } else {
         toast.error(data.error || "操作失败");
@@ -98,7 +125,11 @@ export default function UsersPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+        setUsers((prev) => {
+          const next = prev.filter((u) => u.id !== deleteTarget.id);
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+          return next;
+        });
         toast.success("用户已删除");
       } else {
         toast.error(data.error || "删除失败");
@@ -110,6 +141,39 @@ export default function UsersPage() {
       setDeleteTarget(null);
     }
   };
+
+  const handleRoleSelect = (userId: string, currentRole: string, newRole: string) => {
+    setRoleMenuUser(null);
+    setMenuPosition(null);
+    if (newRole === currentRole) return;
+    const target = users.find((u) => u.id === userId);
+    setRoleChangeTarget({
+      userId,
+      newRole,
+      name: target?.name || target?.username || "未知",
+    });
+  };
+
+  const confirmRoleChange = async () => {
+    if (!roleChangeTarget) return;
+    const { userId, newRole } = roleChangeTarget;
+    setRoleChangeTarget(null);
+    await handleRoleToggle(userId, newRole);
+  };
+
+  // 点击菜单外部关闭
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!roleMenuUser) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setRoleMenuUser(null);
+        setMenuPosition(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [roleMenuUser]);
 
   if (status === "loading") return null;
 
@@ -131,35 +195,50 @@ export default function UsersPage() {
     );
   }
 
-  const stats = {
-    totalLinks: 0,
-    totalCategories: 0,
-    publicLinks: 0,
-    privateLinks: 0,
-  };
+  const adminCount = users.filter((u) => u.role === "admin").length;
+  const userCount = users.filter((u) => u.role === "user").length;
 
   return (
-    <AdminLayout stats={stats}>
+    <AdminLayout>
       <div className="dashboard-container space-y-8">
-        {/* Page Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-500/10 flex items-center justify-center">
-              <Users className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-            </div>
+        {/* Page Header + Stats */}
+        <div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-800 dark:text-white">
-                用户管理
-              </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                共 {users.length} 个用户
-              </p>
+                <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                  用户管理
+                </h1>
+                <p className="text-muted-foreground">
+                  共 {users.length} 个用户
+                </p>
+              </div>
+          </div>
+        </div>
+
+        {/* Stat Cards */}
+        <div className="stagger-grid grid gap-4 sm:grid-cols-3">
+          <div className="stat-card p-4" style={{ "--icon-color": "#6366f1" } as React.CSSProperties}>
+            <p className="text-xs text-muted-foreground mb-1">总用户</p>
+            <p className="text-3xl font-bold mb-1 tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>{users.length}</p>
+          </div>
+          <div className="stat-card p-4" style={{ "--icon-color": "#8b5cf6" } as React.CSSProperties}>
+            <div className="flex items-center gap-2 mb-1">
+              <Shield className="h-3.5 w-3.5 text-violet-500" />
+              <p className="text-xs text-muted-foreground">管理员</p>
             </div>
+            <p className="text-3xl font-bold mb-1 tracking-tight text-violet-600 dark:text-violet-400" style={{ fontFamily: "var(--font-space-grotesk)" }}>{adminCount}</p>
+          </div>
+          <div className="stat-card p-4" style={{ "--icon-color": "#94a3b8" } as React.CSSProperties}>
+            <div className="flex items-center gap-2 mb-1">
+              <User className="h-3.5 w-3.5 text-slate-400" />
+              <p className="text-xs text-muted-foreground">普通用户</p>
+            </div>
+            <p className="text-3xl font-bold mb-1 tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>{userCount}</p>
           </div>
         </div>
 
         {/* User Table */}
-        {isLoading ? (
+        {isFirstLoad && users.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
           </div>
@@ -176,7 +255,20 @@ export default function UsersPage() {
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200 dark:border-slate-700/60 overflow-hidden bg-white dark:bg-slate-900/50">
+          <div className="animate-fade-in-up delay-300">
+          <div className="action-card" style={{ "--accent-color": "#8b5cf6" } as React.CSSProperties}>
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                <Users className="h-6 w-6 text-violet-500" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold mb-1" style={{ fontFamily: "var(--font-space-grotesk)" }}>用户列表</h3>
+                <p className="text-sm text-muted-foreground">
+                  管理系统中的所有用户
+                </p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700/60 overflow-hidden bg-white dark:bg-slate-900/50">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent border-b border-slate-200 dark:border-slate-700/60">
@@ -191,12 +283,18 @@ export default function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user, index) => (
+                {users.map((user, index) => {
+                  const initials = (user.name || user.username || "?")
+                    .slice(0, 2)
+                    .toUpperCase();
+                  const isMe = user.id === session.user?.id;
+
+                  return (
                   <TableRow
                     key={user.id}
                     className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    <TableCell className="text-sm text-slate-400 font-mono">
+                    <TableCell className="text-sm text-slate-400 font-mono w-12">
                       {index + 1}
                     </TableCell>
                     <TableCell>
@@ -205,90 +303,196 @@ export default function UsersPage() {
                           <img
                             src={proxyImageUrl(user.image)}
                             alt=""
-                            className="h-8 w-8 rounded-full ring-2 ring-slate-100 dark:ring-slate-700"
+                            className="h-9 w-9 rounded-full ring-2 ring-slate-100 dark:ring-slate-700 object-cover"
                           />
                         ) : (
-                          <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
-                            <User className="h-4 w-4 text-slate-400" />
+                          <div className={cn(
+                            "h-9 w-9 rounded-full flex items-center justify-center text-xs font-semibold",
+                            user.role === "admin"
+                              ? "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300"
+                              : "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300"
+                          )}>
+                            {initials}
                           </div>
                         )}
-                        <span className="font-medium text-sm text-slate-800 dark:text-white">
-                          {user.name || "未设置"}
-                        </span>
+                        <div>
+                          <span className="font-medium text-sm text-slate-800 dark:text-white">
+                            {user.name || "未设置"}
+                          </span>
+                          {isMe && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300">
+                              我
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-slate-600 dark:text-slate-400 font-mono">
                       {user.username || "-"}
                     </TableCell>
-                    <TableCell className="text-sm text-slate-600 dark:text-slate-400">
+                    <TableCell className="text-sm text-slate-600 dark:text-slate-400 max-w-[180px] truncate">
                       {user.email || "-"}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium",
-                          user.role === "admin"
-                            ? "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
-                            : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-                        )}
-                      >
-                        {user.role === "admin" && <Shield className="h-3 w-3" />}
-                        {user.role === "admin" ? "管理员" : "普通用户"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center text-sm text-slate-600 dark:text-slate-400">
-                      {user._count.links}
-                    </TableCell>
-                    <TableCell className="text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                      {new Date(user.createdAt).toLocaleDateString("zh-CN")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {user.id !== session.user?.id ? (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRoleToggle(user.id, user.role)}
-                              disabled={roleUpdating[user.id]}
-                              className={cn(
-                                "text-xs h-8",
-                                user.role === "admin"
-                                  ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-                                  : "text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-500/10"
-                              )}
-                            >
-                              {roleUpdating[user.id] ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : user.role === "admin" ? (
-                                "降为普通"
-                              ) : (
-                                "升为管理"
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteTarget(user)}
-                              className="text-xs h-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </>
-                        ) : (
-                          <span className="text-xs text-slate-400 dark:text-slate-500">
-                            当前用户
-                          </span>
+                      <div className="relative inline-block">
+                        <button
+                          onClick={(e) => {
+                            if (roleMenuUser === user.id) {
+                              setRoleMenuUser(null);
+                              setMenuPosition(null);
+                            } else {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setMenuPosition({ top: rect.bottom + 4, left: rect.left + rect.width / 2 });
+                              setRoleMenuUser(user.id);
+                            }
+                          }}
+                          disabled={roleUpdating[user.id]}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer",
+                            user.role === "admin"
+                              ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200 hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20 dark:hover:bg-violet-500/20"
+                              : "bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700"
+                          )}
+                        >
+                          {roleUpdating[user.id] ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : user.role === "admin" ? (
+                            <Shield className="h-3 w-3" />
+                          ) : (
+                            <User className="h-3 w-3" />
+                          )}
+                          {user.role === "admin" ? "管理员" : "普通用户"}
+                          <ChevronDown className="h-3 w-3 opacity-50" />
+                        </button>
+                        {roleMenuUser === user.id && menuPosition && createPortal(
+                          <div
+                            ref={menuRef}
+                            style={{
+                              position: "fixed",
+                              top: menuPosition.top,
+                              left: menuPosition.left,
+                              transform: "translateX(-50%)",
+                            }}
+                            className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                          >
+                            {(["admin", "user"] as const).map((r) => (
+                              <button
+                                key={r}
+                                onClick={() => handleRoleSelect(user.id, user.role, r)}
+                                disabled={roleUpdating[user.id]}
+                                className={cn(
+                                  "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                                  r === user.role
+                                    ? "text-slate-900 dark:text-white font-medium"
+                                    : "text-slate-600 dark:text-slate-400"
+                                )}
+                              >
+                                {r === "admin" ? (
+                                  <Shield className="h-3.5 w-3.5 text-violet-500" />
+                                ) : (
+                                  <User className="h-3.5 w-3.5 text-slate-400" />
+                                )}
+                                <span className="flex-1 text-left">
+                                  {r === "admin" ? "管理员" : "普通用户"}
+                                </span>
+                                {r === user.role && (
+                                  <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                                )}
+                              </button>
+                            ))}
+                          </div>,
+                          document.body
                         )}
                       </div>
                     </TableCell>
+                    <TableCell className="text-center text-sm">
+                      <span className={cn(
+                        "inline-flex items-center justify-center min-w-[1.5rem] h-6 px-1.5 rounded-md text-xs font-medium",
+                        user._count.links > 0
+                          ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300"
+                          : "text-slate-400 dark:text-slate-500"
+                      )}>
+                        {user._count.links}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                      {new Date(user.createdAt).toLocaleDateString("zh-CN", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                      })}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleteTarget(user)}
+                        title="删除用户"
+                        className="h-8 px-2 rounded-lg text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
+          </div>
+          </div>
         )}
       </div>
+
+      {/* Role Change Confirmation Dialog */}
+      <Dialog open={!!roleChangeTarget} onOpenChange={() => setRoleChangeTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-violet-500" />
+              确认更改角色
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              <p>
+                确定要将用户{" "}
+                <strong className="text-slate-800 dark:text-slate-200">
+                  {roleChangeTarget?.name}
+                </strong>
+                {" "}的角色更改为{" "}
+                <strong className={cn(
+                  roleChangeTarget?.newRole === "admin"
+                    ? "text-violet-600 dark:text-violet-400"
+                    : "text-slate-600 dark:text-slate-400"
+                )}>
+                  {roleChangeTarget?.newRole === "admin" ? "管理员" : "普通用户"}
+                </strong>
+                {" "}吗？
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setRoleChangeTarget(null)}
+              disabled={!!roleChangeTarget && roleUpdating[roleChangeTarget.userId]}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={confirmRoleChange}
+              disabled={!!roleChangeTarget && roleUpdating[roleChangeTarget.userId]}
+              className="bg-violet-600 hover:bg-violet-700 text-white"
+            >
+              {!!roleChangeTarget && roleUpdating[roleChangeTarget.userId] ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Shield className="h-4 w-4 mr-1" />
+              )}
+              确认更改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>

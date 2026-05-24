@@ -95,7 +95,7 @@ body {
 /* Dashboard Styles */
 
 .dashboard-container {
-  font-family: var(--font-sora), -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 .dashboard-container .stat-card {
@@ -104,7 +104,7 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 16px;
   overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dashboard-container .stat-card::before {
@@ -167,7 +167,7 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 20px;
   padding: 24px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
 
@@ -261,6 +261,39 @@ body {
   animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   opacity: 0;
 }
+
+/* Global stagger-grid — for homepage and non-dashboard pages */
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+
+.stagger-grid > * {
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+.stagger-grid > *:nth-child(1)  { animation-delay: 0.05s; }
+.stagger-grid > *:nth-child(2)  { animation-delay: 0.1s; }
+.stagger-grid > *:nth-child(3)  { animation-delay: 0.15s; }
+.stagger-grid > *:nth-child(4)  { animation-delay: 0.2s; }
+.stagger-grid > *:nth-child(5)  { animation-delay: 0.25s; }
+.stagger-grid > *:nth-child(6)  { animation-delay: 0.3s; }
+.stagger-grid > *:nth-child(7)  { animation-delay: 0.35s; }
+.stagger-grid > *:nth-child(8)  { animation-delay: 0.4s; }
+.stagger-grid > *:nth-child(9)  { animation-delay: 0.45s; }
+.stagger-grid > *:nth-child(10) { animation-delay: 0.5s; }
+.stagger-grid > *:nth-child(11) { animation-delay: 0.55s; }
+.stagger-grid > *:nth-child(12) { animation-delay: 0.6s; }
+.stagger-grid > *:nth-child(13) { animation-delay: 0.65s; }
+.stagger-grid > *:nth-child(14) { animation-delay: 0.7s; }
+.stagger-grid > *:nth-child(15) { animation-delay: 0.75s; }
 
 .dashboard-container .stagger-grid > *:nth-child(1) { animation-delay: 100ms; }
 .dashboard-container .stagger-grid > *:nth-child(2) { animation-delay: 200ms; }

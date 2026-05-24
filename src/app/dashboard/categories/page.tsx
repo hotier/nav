@@ -40,7 +40,14 @@ function CategoryIcon({ icon, className }: { icon?: string | null; className?: s
 
 export default function CategoriesPage() {
   const { data: session } = useSession();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<Category[]>(() => {
+    try {
+      const cached = localStorage.getItem("nav_categories_cache");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -50,14 +57,6 @@ export default function CategoriesPage() {
     parentId: "",
     icon: "",
   });
-
-  // 初始化：从 localStorage 加载缓存，实现即时渲染
-  useEffect(() => {
-    try {
-      const cached = localStorage.getItem("nav_categories_cache");
-      if (cached) setCategories(JSON.parse(cached));
-    } catch { /* ignore */ }
-  }, []);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -174,7 +173,7 @@ export default function CategoriesPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-100">
+          <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-200">
             <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
               <Folder className="h-4 w-4 text-violet-500" />
               <span className="text-sm font-medium">{stats.totalCategories} 个分类</span>
@@ -261,6 +260,7 @@ export default function CategoriesPage() {
         </div>
 
         {/* Categories Table */}
+        <div className="animate-fade-in-up delay-300">
         <div className="action-card" style={{ "--accent-color": "#8b5cf6" } as React.CSSProperties}>
           <div className="flex items-start gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -366,6 +366,7 @@ export default function CategoriesPage() {
               </TableBody>
             </Table>
           </div>
+        </div>
         </div>
       </div>
     </AdminLayout>

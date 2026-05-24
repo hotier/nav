@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { Plus, Search, Trash2, ExternalLink, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Pencil } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
+import { Plus, Search, Trash2, ExternalLink, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Pencil, ChevronDown, Check, Loader2, Home } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,13 +13,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { LinkForm } from "@/components/LinkForm";
 import {
   Table,
@@ -29,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import toast from "react-hot-toast";
+import { cn } from "@/lib/utils";
+import { DynamicIcon } from "@/components/DynamicIcon";
 import type { Link as LinkType, Category } from "@/types";
 
 function highlightText(text: string, query: string) {
@@ -45,8 +41,22 @@ function highlightText(text: string, query: string) {
 }
 
 export default function LinksPage() {
-  const [links, setLinks] = useState<LinkType[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [links, setLinks] = useState<LinkType[]>(() => {
+    try {
+      const cached = localStorage.getItem("nav_links_cache");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [categories, setCategories] = useState<Category[]>(() => {
+    try {
+      const cached = localStorage.getItem("nav_categories_cache");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,17 +80,94 @@ export default function LinksPage() {
   const [accessFilter, setAccessFilter] = useState("all");
   const [connectivityFilter, setConnectivityFilter] = useState("all");
 
-  // 初始化：从 localStorage 加载缓存，实现即时渲染
+  // 访问权限下拉菜单
+  const [accessMenuOpen, setAccessMenuOpen] = useState(false);
+  const accessBtnRef = useRef<HTMLButtonElement>(null);
+  const accessMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (!accessMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (accessMenuRef.current && !accessMenuRef.current.contains(e.target as Node)) {
+        setAccessMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [accessMenuOpen]);
+
+  // 分类筛选下拉菜单
+  const [catMenuOpen, setCatMenuOpen] = useState(false);
+  const catBtnRef = useRef<HTMLButtonElement>(null);
+  const catMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!catMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (catMenuRef.current && !catMenuRef.current.contains(e.target as Node)) {
+        setCatMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [catMenuOpen]);
+
+  // 连通性筛选下拉菜单
+  const [connMenuOpen, setConnMenuOpen] = useState(false);
+  const connBtnRef = useRef<HTMLButtonElement>(null);
+  const connMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!connMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (connMenuRef.current && !connMenuRef.current.contains(e.target as Node)) {
+        setConnMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [connMenuOpen]);
+
+  // 逐行访问权限下拉
+  const [linkAccessId, setLinkAccessId] = useState<string | null>(null);
+  const [linkAccessPos, setLinkAccessPos] = useState<{ top: number; left: number } | null>(null);
+  const linkAccessMenuRef = useRef<HTMLDivElement>(null);
+  const [linkUpdating, setLinkUpdating] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!linkAccessId) return;
+    const handler = (e: MouseEvent) => {
+      if (linkAccessMenuRef.current && !linkAccessMenuRef.current.contains(e.target as Node)) {
+        setLinkAccessId(null);
+        setLinkAccessPos(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [linkAccessId]);
+
+  const handleToggleAccess = async (linkId: string, currentPrivate: boolean) => {
+    setLinkAccessId(null);
+    setLinkAccessPos(null);
+    setLinkUpdating((prev) => ({ ...prev, [linkId]: true }));
     try {
-      const cachedLinks = localStorage.getItem("nav_links_cache");
-      if (cachedLinks) setLinks(JSON.parse(cachedLinks));
-    } catch { /* ignore */ }
-    try {
-      const cachedCategories = localStorage.getItem("nav_categories_cache");
-      if (cachedCategories) setCategories(JSON.parse(cachedCategories));
-    } catch { /* ignore */ }
-  }, []);
+      const res = await fetch(`/api/links/${linkId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPrivate: !currentPrivate }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setLinks((prev) =>
+          prev.map((l) => (l.id === linkId ? { ...l, isPrivate: updated.isPrivate } : l))
+        );
+        toast.success(updated.isPrivate ? "已设为私有" : "已设为公开");
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "操作失败");
+      }
+    } catch {
+      toast.error("操作失败");
+    } finally {
+      setLinkUpdating((prev) => ({ ...prev, [linkId]: false }));
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -392,7 +479,7 @@ export default function LinksPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-100">
+          <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-200">
             <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
               <Link2 className="h-4 w-4 text-blue-500" />
               <span className="text-sm font-medium">{stats.totalLinks} 个链接</span>
@@ -474,41 +561,175 @@ export default function LinksPage() {
               className="pl-10"
             />
           </div>
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="分类" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部分类</SelectItem>
-              {categories.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={accessFilter} onValueChange={setAccessFilter}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue placeholder="访问权限" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="public">公开</SelectItem>
-              <SelectItem value="private">私有</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={connectivityFilter} onValueChange={setConnectivityFilter}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue placeholder="连通性" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="active">有效</SelectItem>
-              <SelectItem value="timeout">超时</SelectItem>
-              <SelectItem value="dead">不可达</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Category Filter — 同款自定义下拉 */}
+          <div className="relative">
+            <button
+              ref={catBtnRef}
+              onClick={() => setCatMenuOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+            >
+              {categoryFilter === "all" ? (
+                <Home className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+              ) : (
+                <DynamicIcon name={categories.find((c) => c.id === categoryFilter)?.icon || "Folder"} className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+              )}
+              {categoryFilter === "all" ? "全部分类" : (categories.find((c) => c.id === categoryFilter)?.name || "分类")}
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            </button>
+            {catMenuOpen && createPortal(
+              <div
+                ref={catMenuRef}
+                style={{
+                  position: "fixed",
+                  top: (catBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: (catBtnRef.current?.getBoundingClientRect().left ?? 0) + (catBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
+                  transform: "translateX(-50%)",
+                }}
+                className="z-[9999] min-w-[140px] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+              >
+                <button
+                  onClick={() => { setCategoryFilter("all"); setCatMenuOpen(false); }}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                    categoryFilter === "all" ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                  )}
+                >
+                  <Home className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                  <span className="flex-1 text-left">全部分类</span>
+                  {categoryFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                </button>
+                {categories.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setCategoryFilter(c.id); setCatMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                      categoryFilter === c.id ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                    )}
+                  >
+                    <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                    <span className="flex-1 text-left">{c.name}</span>
+                    {categoryFilter === c.id && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+          </div>
+          {/* Access Filter — 同款自定义下拉 */}
+          <div className="relative">
+            <button
+              ref={accessBtnRef}
+              onClick={() => setAccessMenuOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+            >
+              {accessFilter === "all" ? (
+                <Globe className="h-3.5 w-3.5 text-slate-400" />
+              ) : accessFilter === "public" ? (
+                <Globe className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <Lock className="h-3.5 w-3.5 text-amber-500" />
+              )}
+              {accessFilter === "all" ? "全部" : accessFilter === "public" ? "公开" : "私有"}
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            </button>
+            {accessMenuOpen && createPortal(
+              <div
+                ref={accessMenuRef}
+                style={{
+                  position: "fixed",
+                  top: (accessBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: (accessBtnRef.current?.getBoundingClientRect().left ?? 0) + (accessBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
+                  transform: "translateX(-50%)",
+                }}
+                className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+              >
+                {([
+                  { value: "all", label: "全部", Icon: Globe, color: "text-slate-400" },
+                  { value: "public", label: "公开", Icon: Globe, color: "text-emerald-500" },
+                  { value: "private", label: "私有", Icon: Lock, color: "text-amber-500" },
+                ] as const).map(({ value, label, Icon, color }) => (
+                  <button
+                    key={value}
+                    onClick={() => {
+                      setAccessFilter(value);
+                      setAccessMenuOpen(false);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                      accessFilter === value
+                        ? "text-slate-900 dark:text-white font-medium"
+                        : "text-slate-600 dark:text-slate-400"
+                    )}
+                  >
+                    <Icon className={cn("h-3.5 w-3.5", color)} />
+                    <span className="flex-1 text-left">{label}</span>
+                    {accessFilter === value && (
+                      <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+          </div>
+          {/* Connectivity Filter — 同款自定义下拉 */}
+          <div className="relative">
+            <button
+              ref={connBtnRef}
+              onClick={() => setConnMenuOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+            >
+              {connectivityFilter === "active" ? (
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+              ) : connectivityFilter === "timeout" ? (
+                <XCircle className="h-3.5 w-3.5 text-amber-500" />
+              ) : connectivityFilter === "dead" ? (
+                <XCircle className="h-3.5 w-3.5 text-red-500" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 text-slate-400" />
+              )}
+              {connectivityFilter === "active" ? "有效" : connectivityFilter === "timeout" ? "超时" : connectivityFilter === "dead" ? "不可达" : "连通性"}
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            </button>
+            {connMenuOpen && createPortal(
+              <div
+                ref={connMenuRef}
+                style={{
+                  position: "fixed",
+                  top: (connBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: (connBtnRef.current?.getBoundingClientRect().left ?? 0) + (connBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
+                  transform: "translateX(-50%)",
+                }}
+                className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+              >
+                {([
+                  { value: "all", label: "全部", Icon: RefreshCw, color: "text-slate-400" },
+                  { value: "active", label: "有效", Icon: CheckCircle, color: "text-emerald-500" },
+                  { value: "timeout", label: "超时", Icon: XCircle, color: "text-amber-500" },
+                  { value: "dead", label: "不可达", Icon: XCircle, color: "text-red-500" },
+                ] as const).map(({ value, label, Icon, color }) => (
+                  <button
+                    key={value}
+                    onClick={() => { setConnectivityFilter(value); setConnMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                      connectivityFilter === value ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                    )}
+                  >
+                    <Icon className={cn("h-3.5 w-3.5", color)} />
+                    <span className="flex-1 text-left">{label}</span>
+                    {connectivityFilter === value && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+          </div>
         </div>
 
         {/* Links Table */}
+        <div className="animate-fade-in-up delay-300">
         <div className="action-card" style={{ "--accent-color": "#3b82f6" } as React.CSSProperties}>
           <div className="flex items-start gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -566,9 +787,69 @@ export default function LinksPage() {
                         {link.category?.name || "-"}
                       </TableCell>
                       <TableCell>
-                        <span className={`text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 w-fit ${link.isPrivate ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300" : "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"}`}>
-                          {link.isPrivate ? "私有" : "公开"}
-                        </span>
+                        <div className="relative inline-block">
+                          <button
+                            onClick={(e) => {
+                              if (linkAccessId === link.id) {
+                                setLinkAccessId(null);
+                                setLinkAccessPos(null);
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setLinkAccessPos({ top: rect.bottom + 4, left: rect.left + rect.width / 2 });
+                                setLinkAccessId(link.id);
+                              }
+                            }}
+                            disabled={linkUpdating[link.id]}
+                            className={cn(
+                              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1",
+                              link.isPrivate
+                                ? "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20 dark:hover:bg-amber-500/20"
+                                : "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20 dark:hover:bg-emerald-500/20"
+                            )}
+                          >
+                            {linkUpdating[link.id] ? (
+                              <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+                            ) : link.isPrivate ? (
+                              <Lock className="h-3 w-3 text-amber-500" />
+                            ) : (
+                              <Globe className="h-3 w-3 text-emerald-500" />
+                            )}
+                            {link.isPrivate ? "私有" : "公开"}
+                            <ChevronDown className="h-3 w-3 opacity-50" />
+                          </button>
+                          {linkAccessId === link.id && linkAccessPos && createPortal(
+                            <div
+                              ref={linkAccessMenuRef}
+                              style={{
+                                position: "fixed",
+                                top: linkAccessPos.top,
+                                left: linkAccessPos.left,
+                                transform: "translateX(-50%)",
+                              }}
+                              className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                            >
+                              {([
+                                { value: false, label: "公开", Icon: Globe, color: "text-emerald-500" },
+                                { value: true, label: "私有", Icon: Lock, color: "text-amber-500" },
+                              ] as const).map(({ value, label, Icon, color }) => (
+                                <button
+                                  key={String(value)}
+                                  onClick={() => handleToggleAccess(link.id, link.isPrivate)}
+                                  disabled={linkUpdating[link.id]}
+                                  className={cn(
+                                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                                    link.isPrivate === value ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                                  )}
+                                >
+                                  <Icon className={cn("h-3.5 w-3.5", color)} />
+                                  <span className="flex-1 text-left">{label}</span>
+                                  {link.isPrivate === value && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                                </button>
+                              ))}
+                            </div>,
+                            document.body
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {(() => {
@@ -577,7 +858,7 @@ export default function LinksPage() {
 
                           if (checking) {
                             return (
-                              <span className="text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
                                 <RefreshCw className="h-3 w-3" /> 检测中
                               </span>
                             );
@@ -590,7 +871,7 @@ export default function LinksPage() {
                                   e.stopPropagation();
                                   handleCheckSingle(link.id, link.url);
                                 }}
-                                className="text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/20 transition-colors cursor-pointer"
+                                className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/20 transition-colors cursor-pointer"
                               >
                                 <RefreshCw className="h-3 w-3" /> 检测
                               </button>
@@ -599,15 +880,15 @@ export default function LinksPage() {
 
                           const badge =
                             s === "active" ? (
-                              <span className="text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300">
                                 <CheckCircle className="h-3 w-3" /> 有效
                               </span>
                             ) : s === "timeout" ? (
-                              <span className="text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
                                 <XCircle className="h-3 w-3" /> 超时
                               </span>
                             ) : (
-                              <span className="text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300">
                                 <XCircle className="h-3 w-3" /> 不可达
                               </span>
                             );
@@ -659,6 +940,7 @@ export default function LinksPage() {
               </TableBody>
             </Table>
           </div>
+        </div>
         </div>
       </div>
     </AdminLayout>

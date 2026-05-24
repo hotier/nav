@@ -130,6 +130,7 @@ export function invalidateCategories(): void {
   invalidateByPrefix("categories");
   invalidateByPrefix("category:");
   invalidateByPrefix("links"); // 分类变更影响所有链接的归类展示，必须全清
+  invalidateByPrefix("dashboard:stats:"); // 仪表盘统计也需刷新
 }
 
 /**
@@ -145,6 +146,7 @@ export function invalidateLinks(userId?: string, categoryId?: string): void {
   if (userId) {
     keys.push(`links:all:${userId}`);
     keys.push(`links:dashboard:${userId}`);
+    keys.push(`dashboard:stats:${userId}`); // 仪表盘统计也需刷新
 
     if (categoryId) {
       // ====== 精确清除 ======
@@ -186,4 +188,14 @@ export function invalidateLinksWithOldCategory(
 /** 全量清除（导入/导出等批量操作后） */
 export function invalidateAll(): void {
   invalidateByPrefix("");
+}
+
+/** 用户管理写操作后失效用户列表缓存 */
+export function invalidateUsers(): void {
+  deleteCached("users:all");
+}
+
+/** 仪表盘统计缓存失效（链接/分类变更后调用） */
+export function invalidateDashboardStats(): void {
+  invalidateByPrefix("dashboard:stats:");
 }

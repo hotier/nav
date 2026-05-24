@@ -21,7 +21,7 @@ import {
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { cn, proxyImageUrl } from "@/lib/utils";
 import { SiteFooter } from "@/components/SiteFooter";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -48,6 +48,49 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [menuPinned, setMenuPinned] = useState(false);
+  const avatarRef = useRef<HTMLDivElement>(null);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+        setMenuPinned(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    };
+  }, []);
+
+  const handleMouseEnter = () => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    setUserMenuOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    if (menuPinned) return;
+    leaveTimerRef.current = setTimeout(() => setUserMenuOpen(false), 300);
+  };
+
+  const handleAvatarClick = () => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    if (userMenuOpen && menuPinned) {
+      setUserMenuOpen(false);
+      setMenuPinned(false);
+    } else {
+      setUserMenuOpen(true);
+      setMenuPinned(true);
+    }
+  };
 
   if (status === "loading") {
     return null;
@@ -155,10 +198,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <ThemeSwitcher />
 
             {/* User Avatar with Dropdown */}
-            <div className="relative">
+            <div ref={avatarRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleAvatarClick}>
               <button
-                onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-sky-500 text-white font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden"
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-sky-500 text-white font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden cursor-pointer"
                 title="用户菜单"
               >
                 {session.user?.image ? (
@@ -177,7 +219,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                   <Link
                     href="/"
                     className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                    onClick={() => setUserMenuOpen(false)}
+                    onClick={() => { setUserMenuOpen(false); setMenuPinned(false); }}
                   >
                     <ArrowLeft className="h-4 w-4" />
                     回到首页
@@ -185,13 +227,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                   <Link
                     href="/dashboard/account"
                     className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                    onClick={() => setUserMenuOpen(false)}
+                    onClick={() => { setUserMenuOpen(false); setMenuPinned(false); }}
                   >
                     <User className="h-4 w-4" />
                     账户管理
                   </Link>
                   <button
-                    onClick={() => { signOut(); setUserMenuOpen(false); }}
+                    onClick={() => { signOut(); setUserMenuOpen(false); setMenuPinned(false); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                   >
                     <LogOut className="h-4 w-4" />

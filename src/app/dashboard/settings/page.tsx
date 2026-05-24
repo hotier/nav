@@ -58,7 +58,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-100">
+        <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-200">
           <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-amber-500" />
             <span className="text-sm font-medium">AI 功能已启用</span>
@@ -70,6 +70,7 @@ export default function SettingsPage() {
         </div>
 
         {/* AI Settings */}
+        <div className="animate-fade-in-up delay-300">
         <div className="action-card" style={{ "--accent-color": "#f59e0b" } as React.CSSProperties}>
           <div className="flex items-start gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -121,8 +122,10 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        </div>
 
         {/* Account Info */}
+        <div className="animate-fade-in-up delay-400">
         <div className="action-card" style={{ "--accent-color": "#3b82f6" } as React.CSSProperties}>
           <div className="flex items-start gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -152,8 +155,10 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+        </div>
 
         {/* Theme Settings */}
+        <div className="animate-fade-in-up delay-500">
         <div className="action-card" style={{ "--accent-color": "#8b5cf6" } as React.CSSProperties}>
           <div className="flex items-start gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -168,6 +173,7 @@ export default function SettingsPage() {
           <p className="text-sm text-muted-foreground">
             点击右上角的主题切换按钮，可以在浅色、深色和系统主题之间切换
           </p>
+        </div>
         </div>
       </div>
     </AdminLayout>

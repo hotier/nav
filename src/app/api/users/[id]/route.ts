@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { invalidateUsers } from "@/lib/queries";
 
 type Params = Promise<{ id: string }>;
 
@@ -16,10 +17,6 @@ export async function PATCH(
 
   const { id } = await params;
 
-  if (id === session.user.id) {
-    return NextResponse.json({ error: "不能修改自己的角色" }, { status: 400 });
-  }
-
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) {
     return NextResponse.json({ error: "用户不存在" }, { status: 404 });
@@ -31,6 +28,17 @@ export async function PATCH(
 
     if (!role || !["admin", "user"].includes(role)) {
       return NextResponse.json({ error: "无效的角色值" }, { status: 400 });
+    }
+
+    // 管理员降级为普通用户 → 确保至少还有一位管理员
+    if (user.role === "admin" && role === "user") {
+      const adminCount = await prisma.user.count({ where: { role: "admin" } });
+      if (adminCount <= 1) {
+        return NextResponse.json(
+          { error: "必须至少保留一位管理员，请先将其他用户设为管理员" },
+          { status: 400 }
+        );
+      }
     }
 
     const updated = await prisma.user.update({
@@ -48,6 +56,7 @@ export async function PATCH(
       },
     });
 
+    invalidateUsers();
     return NextResponse.json(updated);
   } catch {
     return NextResponse.json({ error: "操作失败" }, { status: 500 });
@@ -65,10 +74,6 @@ export async function DELETE(
   }
 
   const { id } = await params;
-
-  if (id === session.user.id) {
-    return NextResponse.json({ error: "不能删除自己的账号" }, { status: 400 });
-  }
 
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) {
@@ -88,5 +93,6 @@ export async function DELETE(
 
   await prisma.user.delete({ where: { id } });
 
+  invalidateUsers();
   return NextResponse.json({ success: true });
 }

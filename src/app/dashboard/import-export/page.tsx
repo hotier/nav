@@ -145,7 +145,7 @@ export default function ImportExportPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-100">
+        <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-200">
           <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
             <Upload className="h-4 w-4 text-emerald-500" />
             <span className="text-sm font-medium">支持 HTML/JSON 格式</span>
@@ -156,7 +156,7 @@ export default function ImportExportPage() {
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="animate-fade-in-up delay-200 grid gap-6 md:grid-cols-2">
           {/* Import Card */}
           <div className="action-card" style={{ "--accent-color": "#10b981" } as React.CSSProperties}>
             <div className="flex items-start gap-4 mb-4">
