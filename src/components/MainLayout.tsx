@@ -74,7 +74,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const isAdmin = !!session?.user;
+  const isAdmin = session?.user?.role === "admin";
 
   const handleAddLink = async (data: {
     title: string;

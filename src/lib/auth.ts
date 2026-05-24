@@ -80,25 +80,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async session({ session, token }) {
       if (session.user) {
-        const u = session.user as { id: string; name: string | null; email: string | null; image: string | null };
+        const u = session.user as { id: string; name: string | null; email: string | null; image: string | null; role?: string | null };
         u.id = token.sub!;
         u.name = token.name ?? null;
         u.email = token.email ?? null;
         u.image = (token.image ?? null) as (string | null);
+        u.role = token.role ?? null;
       }
       return session;
     },
     async jwt({ token, user, trigger, session }) {
       if (user) {
-        // 首次登录：写入 token（含 tokenVersion 用于改密后强制下线）
+        // 首次登录：写入 token（含 role 和 tokenVersion 用于改密后强制下线）
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
-          select: { tokenVersion: true },
+          select: { tokenVersion: true, role: true },
         });
         token.sub = user.id;
         token.name = user.name;
         token.email = user.email;
         token.image = user.image;
+        token.role = dbUser?.role ?? "user";
         token.tokenVersion = dbUser?.tokenVersion ?? 0;
       }
 

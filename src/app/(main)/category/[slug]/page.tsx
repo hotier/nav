@@ -96,7 +96,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
         <CategoryContent
           categoryId={category.id}
           userId={userId}
-          isAdmin={!!session?.user}
+          isAdmin={session?.user?.role === "admin"}
         />
       </Suspense>
 

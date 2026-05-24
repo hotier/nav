@@ -42,6 +42,7 @@ model User {
   image         String?
   username      String?   @unique
   password      String?
+  role          String    @default("user")
   tokenVersion  Int       @default(0)
   accounts      Account[]
   sessions      Session[]

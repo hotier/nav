@@ -53,7 +53,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         <LinksGrid
           links={linksData}
           categories={categoriesData}
-          isAdmin={!!session?.user}
+          isAdmin={session?.user?.role === "admin"}
           searchQuery={query}
         />
       )}

@@ -50,7 +50,7 @@ export async function HomeContent() {
       <LinksGrid
         links={linksData}
         categories={categories}
-        isAdmin={!!userId}
+        isAdmin={session?.user?.role === "admin"}
       />
     </>
   );
