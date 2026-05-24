@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Eye, EyeOff, Github } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -38,7 +40,7 @@ export default function LoginPage() {
           toast.error("用户名或密码错误");
         } else {
           toast.success("登录成功");
-          router.push("/dashboard");
+          router.push(callbackUrl);
           router.refresh();
         }
       } else {
@@ -66,7 +68,7 @@ export default function LoginPage() {
   };
 
   const handleOAuthLogin = (provider: string) => {
-    signIn(provider, { callbackUrl: "/dashboard" });
+    signIn(provider, { callbackUrl });
   };
 
   return (
@@ -183,5 +185,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

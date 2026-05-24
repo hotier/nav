@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import { NextResponse } from "next/server";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
@@ -78,6 +79,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     strategy: "jwt",
   },
   callbacks: {
+    authorized({ auth, request }) {
+      const isLoggedIn = !!auth;
+      if (!isLoggedIn && request.nextUrl.pathname.startsWith("/dashboard")) {
+        const loginUrl = new URL("/login", request.nextUrl.origin);
+        loginUrl.searchParams.set("callbackUrl", request.nextUrl.pathname);
+        return NextResponse.redirect(loginUrl);
+      }
+      return NextResponse.next();
+    },
     async session({ session, token }) {
       if (session.user) {
         const u = session.user as { id: string; name: string | null; email: string | null; image: string | null; role?: string | null };
