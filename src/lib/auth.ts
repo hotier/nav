@@ -85,7 +85,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         u.name = token.name ?? null;
         u.email = token.email ?? null;
         u.image = (token.image ?? null) as (string | null);
-        u.role = token.role ?? null;
+        u.role = (token.role as string | null | undefined) ?? null;
       }
       return session;
     },
