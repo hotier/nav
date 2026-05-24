@@ -5,6 +5,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { AUTH_SECRET as LOCAL_AUTH_SECRET } from "@/lib/auth-secret";
 
 const providers = [];
 
@@ -67,7 +68,8 @@ providers.push(
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers,
-  secret: process.env.AUTH_SECRET,
+  // 优先级：Vercel 环境变量 > 构建时注入的本地文件 > undefined
+  secret: process.env.AUTH_SECRET || LOCAL_AUTH_SECRET || undefined,
   trustHost: true,
   pages: {
     signIn: "/login",

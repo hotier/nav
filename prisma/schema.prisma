@@ -58,6 +58,11 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+model AppSetting {
+  key   String @id
+  value String
+}
+
 model Category {
   id        String   @id @default(cuid())
   slug      String?  @unique
