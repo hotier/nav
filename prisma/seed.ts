@@ -322,6 +322,7 @@ async function main() {
   console.log("");
 
   console.log("🎉 数据库初始化完成!");
+}
 
 main()
   .catch((e) => {
