@@ -1,0 +1,268 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: hsl(0 0% 96%);
+  --color-foreground: hsl(0 0% 10%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(0 0% 10%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(0 0% 10%);
+  --color-primary: hsl(204 90% 56%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(240 5% 96%);
+  --color-secondary-foreground: hsl(0 0% 10%);
+  --color-muted: hsl(240 5% 94%);
+  --color-muted-foreground: hsl(0 0% 45%);
+  --color-accent: hsl(204 90% 96%);
+  --color-accent-foreground: hsl(204 90% 35%);
+  --color-destructive: hsl(4 90% 58%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(240 6% 90%);
+  --color-input: hsl(240 6% 90%);
+  --color-ring: hsl(204 90% 56%);
+  --radius: 0.5rem;
+}
+
+html.dark {
+  /* base → slate-800 */
+  --color-background: hsl(217 33% 17%);
+  --color-foreground: hsl(210 40% 96%);
+  /* card → slate-800 (与前端 LinkCard dark:bg-slate-800/80 一致) */
+  --color-card: hsl(217 33% 17%);
+  --color-card-foreground: hsl(210 40% 96%);
+  /* popover → slate-900 (悬浮层略深于背景) */
+  --color-popover: hsl(217 33% 12%);
+  --color-popover-foreground: hsl(210 40% 96%);
+  /* primary → blue-500 */
+  --color-primary: hsl(217 91% 60%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  /* secondary / muted → slate-900 (比卡片深一层) */
+  --color-secondary: hsl(217 33% 12%);
+  --color-secondary-foreground: hsl(210 40% 96%);
+  --color-muted: hsl(217 33% 12%);
+  --color-muted-foreground: hsl(215 16% 65%);
+  /* accent → slate-800 */
+  --color-accent: hsl(217 33% 17%);
+  --color-accent-foreground: hsl(210 40% 96%);
+  /* destructive → red-500 */
+  --color-destructive: hsl(0 72% 51%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  /* border / input / ring */
+  --color-border: hsl(217 33% 25%);
+  --color-input: hsl(217 33% 17%);
+  --color-ring: hsl(217 91% 60%);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #374151;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* Dashboard Styles */
+
+.dashboard-container {
+  font-family: var(--font-sora), -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.dashboard-container .stat-card {
+  position: relative;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dashboard-container .stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 1px;
+  background: linear-gradient(135deg, 
+    rgba(59, 130, 246, 0.3), 
+    rgba(168, 85, 247, 0.2), 
+    rgba(236, 72, 153, 0.1));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.dashboard-container .stat-card:hover::before {
+  opacity: 1;
+}
+
+.dashboard-container .stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+}
+
+.dashboard-container .stat-icon-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-container .stat-icon-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--icon-color), transparent);
+  opacity: 0.15;
+}
+
+.dashboard-container .gradient-text {
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dashboard-container .action-card {
+  position: relative;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  padding: 24px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.dashboard-container .action-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-color), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.dashboard-container .action-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.12);
+  border-color: var(--accent-color);
+}
+
+.dashboard-container .action-card:hover::after {
+  opacity: 1;
+}
+
+.dashboard-container .glass-effect {
+  background: linear-gradient(135deg, 
+    rgba(59, 130, 246, 0.08), 
+    rgba(168, 85, 247, 0.04));
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .dashboard-container .glass-effect {
+  background: linear-gradient(135deg, 
+    rgba(59, 130, 246, 0.15), 
+    rgba(168, 85, 247, 0.08));
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.dashboard-container .hero-section {
+  position: relative;
+  padding-top: 0;
+  padding-bottom: 32px;
+  margin-bottom: 32px;
+}
+
+.dashboard-container .hero-section::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  right: -100px;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, 
+    rgba(59, 130, 246, 0.15) 0%, 
+    rgba(168, 85, 247, 0.08) 40%, 
+    transparent 70%);
+  pointer-events: none;
+  animation: float 8s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(5deg); }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dashboard-container .animate-fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+.dashboard-container .delay-100 { animation-delay: 100ms; }
+.dashboard-container .delay-200 { animation-delay: 200ms; }
+.dashboard-container .delay-300 { animation-delay: 300ms; }
+.dashboard-container .delay-400 { animation-delay: 400ms; }
+.dashboard-container .delay-500 { animation-delay: 500ms; }
+
+.dashboard-container .stagger-grid > * {
+  animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+.dashboard-container .stagger-grid > *:nth-child(1) { animation-delay: 100ms; }
+.dashboard-container .stagger-grid > *:nth-child(2) { animation-delay: 200ms; }
+.dashboard-container .stagger-grid > *:nth-child(3) { animation-delay: 300ms; }
+.dashboard-container .stagger-grid > *:nth-child(4) { animation-delay: 400ms; }

@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  username      String?   @unique
+  password      String?
+  tokenVersion  Int       @default(0)
+  accounts      Account[]
+  sessions      Session[]
+  links         Link[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  slug      String?  @unique
+  name      String
+  icon      String?
+  parentId  String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent    Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryToCategory")
+  links     Link[]
+
+  @@index([parentId])
+}
+
+model Link {
+  id           String   @id @default(cuid())
+  title        String
+  url          String
+  altUrl       String?
+  description  String?
+  favicon      String?
+  categoryId   String
+  userId       String
+  isPrivate    Boolean  @default(false)
+  isPinned     Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  status       String?  @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([categoryId])
+}

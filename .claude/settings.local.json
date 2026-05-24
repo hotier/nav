@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"d:\\\\My_code\\\\nav\")",
+      "Bash(powershell -Command \"Get-ChildItem -Path 'd:\\\\My_code\\\\nav' -Directory\")",
+      "Bash(npm run *)",
+      "Bash(pnpm db:push)"
+    ]
+  }
+}

@@ -1,0 +1,242 @@
+import { auth } from "@/lib/auth";
+import { getDashboardLinks, getCategories } from "@/lib/queries";
+import { AdminLayout } from "@/components/AdminLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Link2, Folder, Globe, Lock, Sparkles, Zap, TrendingUp, Archive } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+async function getStats(userId: string) {
+  const [links, categories] = await Promise.all([
+    getDashboardLinks(userId),
+    getCategories(),
+  ]);
+
+  return {
+    totalLinks: links.length,
+    totalCategories: categories.length,
+    publicLinks: links.filter((l) => !l.isPrivate).length,
+    privateLinks: links.filter((l) => l.isPrivate).length,
+  };
+}
+
+export default async function DashboardPage() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return null;
+  }
+
+  const stats = await getStats(session.user.id);
+
+  return (
+    <AdminLayout stats={stats}>
+
+      <div className="dashboard-container space-y-8">
+        {/* Stats Grid */}
+        <div className="stagger-grid grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          {/* Total Links */}
+          <div className="stat-card p-6" style={{ "--icon-color": "#3b82f6" } as React.CSSProperties}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="stat-icon-wrapper" style={{ background: "rgba(59, 130, 246, 0.1)", "--icon-color": "#3b82f6" } as React.CSSProperties}>
+                <Link2 className="h-6 w-6 text-blue-500" style={{ color: "#3b82f6" }} />
+              </div>
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                链接
+              </span>
+            </div>
+            <div className="text-3xl font-bold mb-1 tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              {stats.totalLinks}
+            </div>
+            <p className="text-sm text-muted-foreground">总链接数</p>
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">分布</span>
+                <span className="font-medium">{stats.publicLinks} 公开 · {stats.privateLinks} 私有</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Categories */}
+          <div className="stat-card p-6" style={{ "--icon-color": "#8b5cf6" } as React.CSSProperties}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="stat-icon-wrapper" style={{ background: "rgba(139, 92, 246, 0.1)" } as React.CSSProperties}>
+                <Folder className="h-6 w-6 text-violet-500" style={{ color: "#8b5cf6" }} />
+              </div>
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                分类
+              </span>
+            </div>
+            <div className="text-3xl font-bold mb-1 tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              {stats.totalCategories}
+            </div>
+            <p className="text-sm text-muted-foreground">分类总数</p>
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Archive className="h-3 w-3" />
+                <span>有序管理书签</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Public Links */}
+          <div className="stat-card p-6" style={{ "--icon-color": "#10b981" } as React.CSSProperties}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="stat-icon-wrapper" style={{ background: "rgba(16, 185, 129, 0.1)" } as React.CSSProperties}>
+                <Globe className="h-6 w-6 text-emerald-500" style={{ color: "#10b981" }} />
+              </div>
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                公开
+              </span>
+            </div>
+            <div className="text-3xl font-bold mb-1 tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              {stats.publicLinks}
+            </div>
+            <p className="text-sm text-muted-foreground">公开链接</p>
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-500"
+                  style={{ width: `${stats.totalLinks ? (stats.publicLinks / stats.totalLinks) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Private Links */}
+          <div className="stat-card p-6" style={{ "--icon-color": "#f59e0b" } as React.CSSProperties}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="stat-icon-wrapper" style={{ background: "rgba(245, 158, 11, 0.1)" } as React.CSSProperties}>
+                <Lock className="h-6 w-6 text-amber-500" style={{ color: "#f59e0b" }} />
+              </div>
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                私有
+              </span>
+            </div>
+            <div className="text-3xl font-bold mb-1 tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              {stats.privateLinks}
+            </div>
+            <p className="text-sm text-muted-foreground">私有链接</p>
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full transition-all duration-500"
+                  style={{ width: `${stats.totalLinks ? (stats.privateLinks / stats.totalLinks) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="animate-fade-in-up delay-300">
+          <div className="flex items-center gap-2 mb-5">
+            <h2 className="text-lg font-semibold" style={{ fontFamily: "var(--font-space-grotesk)" }}>快捷操作</h2>
+            <div className="flex-1 h-px bg-gradient-to-r from-border to-transparent" />
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Link href="/dashboard/links" className="block">
+              <div 
+                className="action-card group cursor-pointer"
+                style={{ "--accent-color": "#3b82f6" } as React.CSSProperties}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Link2 className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold mb-1 group-hover:text-blue-500 transition-colors">链接管理</h3>
+                    <p className="text-sm text-muted-foreground">添加、编辑、删除和整理你的书签链接</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center text-sm text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span>开始管理</span>
+                  <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+            </Link>
+
+            <Link href="/dashboard/categories" className="block">
+              <div 
+                className="action-card group cursor-pointer"
+                style={{ "--accent-color": "#8b5cf6" } as React.CSSProperties}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Folder className="h-6 w-6 text-violet-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold mb-1 group-hover:text-violet-500 transition-colors">分类管理</h3>
+                    <p className="text-sm text-muted-foreground">创建分类结构，管理二级分类</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center text-sm text-violet-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span>开始管理</span>
+                  <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+            </Link>
+
+            <Link href="/dashboard/import-export" className="block">
+              <div 
+                className="action-card group cursor-pointer"
+                style={{ "--accent-color": "#10b981" } as React.CSSProperties}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Zap className="h-6 w-6 text-emerald-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold mb-1 group-hover:text-emerald-500 transition-colors">导入导出</h3>
+                    <p className="text-sm text-muted-foreground">从浏览器或其他平台导入书签</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex items-center text-sm text-emerald-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span>开始导入</span>
+                  <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+            </Link>
+          </div>
+        </div>
+
+        {/* AI Feature Banner */}
+        <div className="animate-fade-in-up delay-400 relative overflow-hidden">
+          <div className="relative rounded-2xl p-8 bg-gradient-to-br from-blue-600/10 via-violet-600/5 to-transparent border border-blue-500/20">
+            {/* Decorative elements */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-500/20 to-violet-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-violet-500/15 to-blue-500/10 rounded-full blur-2xl translate-y-1/2 -translate-x-1/2" />
+            
+            <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+                  <Sparkles className="h-7 w-7 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold mb-1" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                    AI 智能搜索
+                  </h3>
+                  <p className="text-muted-foreground max-w-md">
+                    使用自然语言描述你的需求，AI 将智能匹配你想要的链接。无需记忆书签名称，轻松找到所需内容。
+                  </p>
+                </div>
+              </div>
+              <Link href="/">
+                <Button className="bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600 text-white border-0 shadow-lg shadow-blue-500/25 px-6 py-3 font-medium">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  体验 AI 搜索
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}
