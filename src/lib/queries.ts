@@ -21,7 +21,7 @@ export const getCategories = cache(async () => {
       },
       orderBy: { sortOrder: "asc" },
     }),
-  60_000 // TTL 60s
+  5 * 60_000 // TTL 5min — 分类结构变动频率极低
   );
 });
 
@@ -36,7 +36,7 @@ export const getCategoryBySlug = cache(async (slug: string) => {
         _count: { select: { links: true } },
       },
     }),
-  60_000
+  5 * 60_000 // TTL 5min
   );
 });
 
@@ -56,7 +56,7 @@ export const getAllLinks = cache(async (userId?: string) => {
       include: { category: { select: { id: true, name: true } } },
       orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
     });
-  }, 30_000); // TTL 30s
+  }, 2 * 60_000); // TTL 2min — 链接变动稍频繁，但也无需 30s 查一次
 });
 
 export const getLinksByCategory = cache(
@@ -74,7 +74,7 @@ export const getLinksByCategory = cache(
         include: { category: { select: { id: true, name: true } } },
         orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
       });
-    }, 30_000);
+    }, 2 * 60_000);
   }
 );
 
@@ -86,7 +86,7 @@ export const getDashboardLinks = cache(async (userId: string) => {
       include: { category: { select: { id: true, name: true } } },
       orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
     }),
-  30_000
+  2 * 60_000
   );
 });
 
