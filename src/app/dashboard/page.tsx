@@ -23,7 +23,7 @@ async function getStats(userId: string) {
 
 export default async function DashboardPage() {
   const session = await auth();
-  if (!session?.user?.id || session?.user?.role !== "admin") {
+  if (!session?.user?.id) {
     return null;
   }
 
