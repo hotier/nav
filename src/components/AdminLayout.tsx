@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   User,
+  Users,
 } from "lucide-react";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { cn, proxyImageUrl } from "@/lib/utils";
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/dashboard", label: "仪表盘", icon: LayoutDashboard, badge: "新" },
   { href: "/dashboard/links", label: "链接管理", icon: Link2 },
   { href: "/dashboard/categories", label: "分类管理", icon: FolderOpen },
+  { href: "/dashboard/users", label: "用户管理", icon: Users, adminOnly: true },
   { href: "/dashboard/import-export", label: "导入导出", icon: FileUp },
   { href: "/dashboard/account", label: "账户管理", icon: User },
   { href: "/dashboard/settings", label: "设置", icon: Settings2 },
@@ -64,6 +66,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       {/* Navigation */}
       <nav className="relative space-y-1 mt-4">
         {navItems.map((item) => {
+          // 仅管理员可见的菜单项
+          if ((item as Record<string, unknown>).adminOnly && session?.user?.role !== "admin") {
+            return null;
+          }
           const Icon = item.icon;
           const isActive = pathname === item.href;
           return (
