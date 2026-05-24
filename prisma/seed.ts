@@ -190,15 +190,39 @@ async function main() {
     writeAuthSecretFile(process.env.AUTH_SECRET);
   }
 
+  const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@example.com";
-  const fromEnv = !!process.env.ADMIN_PASSWORD;
-  const ADMIN_PASSWORD = fromEnv
-    ? process.env.ADMIN_PASSWORD!
-    : generatePassword();
 
   console.log("🌱 开始初始化数据库...");
 
-  // 检查是否已存在 admin 用户
+  // ========== 确定管理员密码（env → DB(AppSetting) → 自动生成）==========
+  let adminPassword: string;
+  let passwordSource: string; // "env" | "db" | "generated"
+
+  if (process.env.ADMIN_PASSWORD) {
+    adminPassword = process.env.ADMIN_PASSWORD!;
+    passwordSource = "env";
+    console.log("🔐 管理员密码: 来自环境变量 ADMIN_PASSWORD");
+  } else {
+    // 尝试从 AppSetting 读取上次部署保存的明文密码
+    let savedPassword = "";
+    try {
+      const setting = await prisma.appSetting.findUnique({ where: { key: "ADMIN_PASSWORD" } });
+      if (setting) savedPassword = setting.value;
+    } catch { /* AppSetting 表可能未就绪 */ }
+
+    if (savedPassword) {
+      adminPassword = savedPassword;
+      passwordSource = "db";
+      console.log("🔐 管理员密码: 从数据库读取（上次部署保存）");
+    } else {
+      adminPassword = generatePassword();
+      passwordSource = "generated";
+      console.log("🔐 管理员密码: 自动生成");
+    }
+  }
+
+  // ========== 检查管理员是否已存在 ==========
   const existingAdmin = await prisma.user.findFirst({
     where: {
       OR: [
@@ -208,64 +232,95 @@ async function main() {
     },
   });
 
+  let passwordChanged = false;
+
   if (existingAdmin) {
-    console.log("⏭ 管理员账号已存在，跳过创建...");
-
-    // 已有管理员，确保存在默认分类 + 补齐 slug
-    const existingCategory = await prisma.category.findFirst();
-
-    if (!existingCategory) {
-      await prisma.category.create({
+    // 管理员已存在 → 仅在密码来源变更时更新密码
+    if (passwordSource !== "db") {
+      const hashedPassword = await bcrypt.hash(adminPassword, 10);
+      await prisma.user.update({
+        where: { id: existingAdmin.id },
         data: {
-          name: "默认分类",
-          slug: generateSlug(),
-          sortOrder: 0,
+          password: hashedPassword,
+          email: ADMIN_EMAIL,
+          // 密码变更 → 递增 tokenVersion 使旧登录态失效
+          tokenVersion: { increment: 1 },
         },
       });
-      console.log("✅ 默认分类已创建");
-    } else if (!existingCategory.slug) {
-      await prisma.category.update({
-        where: { id: existingCategory.id },
-        data: { slug: generateSlug() },
-      });
-      console.log("✅ 默认分类 slug 已补齐");
+      passwordChanged = true;
     }
-
-    return;
+  } else {
+    // 首次创建管理员
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
+    await prisma.user.create({
+      data: {
+        username: "admin",
+        name: "admin",
+        email: ADMIN_EMAIL,
+        password: hashedPassword,
+      },
+    });
   }
 
-  // 创建管理员用户
-  const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, 10);
-  await prisma.user.create({
-    data: {
-      username: "admin",
-      name: "admin",
-      email: ADMIN_EMAIL,
-      password: hashedPassword,
-    },
-  });
-
-  console.log("✅ 管理员账号已创建");
-  console.log("   用户名: admin");
-  console.log("   密码: " + (fromEnv ? "（来自环境变量 ADMIN_PASSWORD）" : ADMIN_PASSWORD));
-  console.log("   邮箱: " + ADMIN_EMAIL);
-
-  if (!fromEnv) {
-    console.log("   ⚠ 请妥善保管以上密码，本次部署后不再显示");
+  // ========== 确保默认分类存在 ==========
+  const existingCategory = await prisma.category.findFirst();
+  if (!existingCategory) {
+    await prisma.category.create({
+      data: { name: "默认分类", slug: generateSlug(), sortOrder: 0 },
+    });
+    console.log("✅ 默认分类已创建");
+  } else if (!existingCategory.slug) {
+    await prisma.category.update({
+      where: { id: existingCategory.id },
+      data: { slug: generateSlug() },
+    });
+    console.log("✅ 默认分类 slug 已补齐");
   }
 
-  // 创建默认分类
-  await prisma.category.create({
-    data: {
-      name: "默认分类",
-      slug: generateSlug(),
-      sortOrder: 0,
-    },
-  });
+  // ========== 持久化明文密码到 AppSetting（供后续部署读取）==========
+  if (passwordSource !== "db") {
+    try {
+      await prisma.appSetting.upsert({
+        where: { key: "ADMIN_PASSWORD" },
+        create: { key: "ADMIN_PASSWORD", value: adminPassword },
+        update: { value: adminPassword },
+      });
+    } catch { /* ignore */ }
+  }
+  // 同时持久化用户名和邮箱
+  try {
+    await prisma.appSetting.upsert({
+      where: { key: "ADMIN_USERNAME" },
+      create: { key: "ADMIN_USERNAME", value: ADMIN_USERNAME },
+      update: { value: ADMIN_USERNAME },
+    });
+    await prisma.appSetting.upsert({
+      where: { key: "ADMIN_EMAIL" },
+      create: { key: "ADMIN_EMAIL", value: ADMIN_EMAIL },
+      update: { value: ADMIN_EMAIL },
+    });
+  } catch { /* ignore */ }
 
-  console.log("✅ 默认分类已创建");
+  // ========== 始终显示管理员账号信息 ==========
+  console.log("");
+  console.log("┌─────────────────────────────────────────────────────────────┐");
+  console.log("│  管理员账号（请妥善保管）                                       │");
+  console.log("├─────────────────────────────────────────────────────────────┤");
+  console.log("│  用户名: " + ADMIN_USERNAME.padEnd(53) + " │");
+  console.log("│  密  码: " + adminPassword.padEnd(53) + " │");
+  console.log("│  邮  箱: " + ADMIN_EMAIL.padEnd(53) + " │");
+  console.log("├─────────────────────────────────────────────────────────────┤");
+  if (passwordChanged) {
+    console.log("│  ⚠ 密码已更新，旧登录态已失效                                   │");
+  }
+  const sourceLabel = passwordSource === "env" ? "环境变量 ADMIN_PASSWORD"
+    : passwordSource === "db" ? "数据库（上次部署保存）"
+    : "自动生成";
+  console.log("│  来源: " + sourceLabel.padEnd(53) + " │");
+  console.log("└─────────────────────────────────────────────────────────────┘");
+  console.log("");
+
   console.log("🎉 数据库初始化完成!");
-}
 
 main()
   .catch((e) => {
