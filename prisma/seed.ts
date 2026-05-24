@@ -302,13 +302,19 @@ async function main() {
     });
   } catch { /* ignore */ }
 
-  // ========== 始终显示管理员账号信息 ==========
+  // ========== 显示管理员账号信息 ==========
   console.log("");
   console.log("┌─────────────────────────────────────────────────────────────┐");
-  console.log("│  管理员账号（请妥善保管）                                       │");
+  console.log("│  管理员账号                                                   │");
   console.log("├─────────────────────────────────────────────────────────────┤");
   console.log("│  用户名: " + ADMIN_USERNAME.padEnd(53) + " │");
-  console.log("│  密  码: " + adminPassword.padEnd(53) + " │");
+  // 密码来自 DB 说明用户已自行修改，显示旧密码会混淆
+  if (passwordSource === "db") {
+    console.log("│  密  码: " + "(未变更，使用现有密码)".padEnd(53) + " │");
+  } else {
+    console.log("│  密  码: " + adminPassword.padEnd(53) + " │");
+    console.log("│          " + "(请妥善保管)".padEnd(53) + " │");
+  }
   console.log("│  邮  箱: " + ADMIN_EMAIL.padEnd(53) + " │");
   console.log("├─────────────────────────────────────────────────────────────┤");
   if (passwordChanged) {
