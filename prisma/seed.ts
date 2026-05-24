@@ -35,25 +35,11 @@ function generatePassword(length = 8): string {
 }
 
 /**
- * 确保 AUTH_SECRET 存在（跨 Vercel 部署持久化版本）：
- * 1. process.env.AUTH_SECRET 已有 → 直接用（Vercel 环境变量）
- * 2. 数据库 AppSetting 表有存储 → 从中读取，注入 process.env
- * 3. 都没有 → 生成新 secret → 存入 DB → 注入 process.env
- *
- * Vercel 部署建议：首次部署后，去 Vercel Dashboard → Environment Variables
- * 添加 AUTH_SECRET，这样 seed 和 runtime 都能直接读到，不再依赖 DB 查询。
+ * 生成 AUTH_SECRET 并写入 .env / process.env
+ * 仅在 env 和 DB 都没有时由 main() 调用
  */
 function ensureAuthSecret(): void {
   const envPath = path.resolve(process.cwd(), ".env");
-
-  // ---- 第 1 优先：环境变量（Vercel Dashboard 设置或 .env 文件）----
-  if (process.env.AUTH_SECRET) {
-    console.log("🔑 AUTH_SECRET: 使用已有环境变量");
-    return;
-  }
-
-  // ---- 异步部分用同步写文件兜底，真实流程在 main 中执行 ----
-  // 生成新 secret 并写入 .env（本地开发持久化）
   const secret = crypto.randomBytes(32).toString("hex");
 
   let envContent = "";
@@ -81,28 +67,17 @@ function ensureAuthSecret(): void {
 
 /**
  * 从数据库 AppSetting 表读取 AUTH_SECRET 并注入进程环境
- * 在 process.env.AUTH_SECRET 未设置时调用
+ * 仅在 env 没有时由 main() 调用
  */
 async function loadAuthSecretFromDB(): Promise<void> {
-  if (process.env.AUTH_SECRET) return;
-
   try {
     const setting = await prisma.appSetting.findUnique({ where: { key: "AUTH_SECRET" } });
     if (setting) {
       process.env.AUTH_SECRET = setting.value;
       console.log("🔑 AUTH_SECRET: 从数据库读取（跨部署持久化）");
-      return;
     }
   } catch {
     // 表还不存在或 DB 不通，忽略
-  }
-
-  // DB 也没有 → 用 seed 刚生成的
-  if (!process.env.AUTH_SECRET) {
-    const secret = crypto.randomBytes(32).toString("hex");
-    process.env.AUTH_SECRET = secret;
-    console.log("🔑 AUTH_SECRET: 新生成（兜底）");
-    console.log(`   ${secret}`);
   }
 }
 
@@ -165,17 +140,32 @@ async function main() {
   // ---- 最早执行：数据库连接检测 ----
   await checkDatabase();
 
-  // ---- AUTH_SECRET：env → DB → 自动生成 ----
+  // ---- AUTH_SECRET：先检测 → 缺失才生成 ----
+  // 1. 环境变量已有 → 直接使用，静默
+  // 2. 环境变量没有 → 查数据库
+  // 3. 数据库也没有 → 生成新的
   const secretFromEnv = !!process.env.AUTH_SECRET;
-  await loadAuthSecretFromDB();
-  ensureAuthSecret();
 
-  // 只有 env 原本没有时才输出相关日志 + 写入 DB
   if (!secretFromEnv) {
+    await loadAuthSecretFromDB();
+  }
+
+  if (!process.env.AUTH_SECRET) {
+    ensureAuthSecret();
     // 新生成的 secret 写入 DB 以跨部署持久化
-    if (process.env.AUTH_SECRET) {
-      await saveAuthSecretToDB(process.env.AUTH_SECRET);
-    }
+    await saveAuthSecretToDB(process.env.AUTH_SECRET!);
+    console.log("");
+    console.log("┌─────────────────────────────────────────────────────────────┐");
+    console.log("│  ⚠  Vercel 部署建议                                        │");
+    console.log("│                                                            │");
+    console.log("│  如需更强保障，请将此值添加到 Vercel Environment Variables：   │");
+    console.log(`│  AUTH_SECRET = ${process.env.AUTH_SECRET!.substring(0, 12)}...  │`);
+    console.log("│  （已存 DB + 本地文件，不设置也能正常工作）                       │");
+    console.log("└─────────────────────────────────────────────────────────────┘");
+    console.log("");
+  } else if (!secretFromEnv) {
+    // 从 DB 读到了（env 原本没有）→ 提示可设环境变量
+    await saveAuthSecretToDB(process.env.AUTH_SECRET);
     console.log("");
     console.log("┌─────────────────────────────────────────────────────────────┐");
     console.log("│  ⚠  Vercel 部署建议                                        │");
