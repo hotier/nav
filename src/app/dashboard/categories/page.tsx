@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, Fragment } from "react";
 import { useSession } from "next-auth/react";
 import { Plus, Trash2, Edit, Folder, FolderOpen } from "lucide-react";
-import { getCategoryIcon } from "@/lib/icons";
+import { DynamicIcon } from "@/components/DynamicIcon";
 import { AdminLayout } from "@/components/AdminLayout";
 import { IconPicker } from "@/components/IconPicker";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import toast from "react-hot-toast";
 import type { Category } from "@/types";
 
 function CategoryIcon({ icon, className }: { icon?: string | null; className?: string }) {
-  return getCategoryIcon(icon, className || "h-4 w-4 text-muted-foreground");
+  return <DynamicIcon name={icon || "Folder"} className={className || "h-4 w-4 text-muted-foreground"} />;
 }
 
 export default function CategoriesPage() {

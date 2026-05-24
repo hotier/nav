@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
-import { getCategoryIcon } from "@/lib/icons";
+import { DynamicIcon } from "@/components/DynamicIcon";
 import {
   Home,
   LayoutDashboard,
@@ -201,7 +201,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                 </div>
               ) : (
                 <Link href="/login">
-                  <Button size="sm">登录</Button>
+                  <Button size="sm" className="bg-gradient-to-r from-blue-500 to-sky-500 hover:from-blue-600 hover:to-sky-600 shadow-lg shadow-blue-500/25 text-white">登录</Button>
                 </Link>
               )}
 
@@ -254,7 +254,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                         : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60"
                     )}
                   >
-                    {getCategoryIcon(category.icon, "h-4 w-4")}
+                    <DynamicIcon name={category.icon || "Folder"} className="h-4 w-4" />
                     <span className="flex-1 truncate">{category.name}</span>
                     {category._count && (
                       <span className={cn("text-xs px-2 py-0.5 rounded-full", pathname === `/category/${category.slug}` ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700")}>
@@ -275,7 +275,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                               : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60"
                           )}
                         >
-                          {getCategoryIcon(child.icon, "h-3 w-3")}
+                          <DynamicIcon name={child.icon || "Folder"} className="h-3 w-3" />
                           <span className="flex-1 truncate">{child.name}</span>
                         </Link>
                       ))}
@@ -321,7 +321,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    {getCategoryIcon(cat.icon, "h-4 w-4")}
+                    <DynamicIcon name={cat.icon || "Folder"} className="h-4 w-4" />
                     {cat.name}
                   </Link>
                   {cat.children?.map((child) => (
@@ -331,7 +331,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                       className="flex items-center gap-3 pl-10 pr-3 py-2 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
                       onClick={() => setMobileMenuOpen(false)}
                     >
-                      {getCategoryIcon(child.icon, "h-4 w-4")}
+                      <DynamicIcon name={child.icon || "Folder"} className="h-4 w-4" />
                       {child.name}
                     </Link>
                   ))}

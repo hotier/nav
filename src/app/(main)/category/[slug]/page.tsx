@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getCategories, getCategoryBySlug, getLinksByCategory } from "@/lib/queries";
 import { LinksGrid } from "@/components/LinksGrid";
-import { getCategoryIcon } from "@/lib/icons";
+import { DynamicIcon } from "@/components/DynamicIcon";
 import type { Category, Link as LinkType } from "@/types";
 
 interface CategoryPageProps {
@@ -30,7 +30,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
     if (!icon) return null;
     return (
       <span className="inline-block mr-2 align-middle">
-        {getCategoryIcon(icon, "h-6 w-6")}
+        <DynamicIcon name={icon} className="h-6 w-6" />
       </span>
     );
   };

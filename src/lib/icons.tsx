@@ -70,19 +70,39 @@ import {
   Database,
 } from "lucide-react";
 
-// ========== 全库图标名（惰性加载，避免首页加载整个 lucide-react icons 元数据 ~190KB）==========
-let _allIconNamesCache: string[] | null = null;
-let _loadingPromise: Promise<string[]> | null = null;
+// ========== 全库图标（惰性加载，共享缓存）==========
+type LucideModule = Record<string, React.ComponentType<{ className?: string }>>;
+
+// 用 ICON_MAP 初始化缓存，精选图标和全库图标走同一条渲染路径
+let _lucideCache: LucideModule | null = null;
+let _loadingPromise: Promise<void> | null = null;
+
+function getCache(): LucideModule {
+  if (!_lucideCache) _lucideCache = { ...ICON_MAP };
+  return _lucideCache;
+}
+
+async function loadLucideModule(): Promise<void> {
+  if (_loadingPromise) return _loadingPromise;
+  _loadingPromise = import("lucide-react").then((mod) => {
+    const icons = (mod as Record<string, unknown>).icons as LucideModule | undefined;
+    if (icons && typeof icons === "object") {
+      Object.assign(getCache(), icons);
+    } else {
+      // 回退：从模块导出中提取大写开头的 key
+      for (const k of Object.keys(mod)) {
+        if (/^[A-Z]/.test(k) && k !== "default" && k !== "icons" && typeof (mod as Record<string, unknown>)[k] === "function") {
+          getCache()[k] = (mod as Record<string, unknown>)[k] as React.ComponentType<{ className?: string }>;
+        }
+      }
+    }
+  }).catch(() => { /* 加载失败，保持 ICON_MAP 兜底 */ });
+  return _loadingPromise;
+}
 
 export async function getAllIconNames(): Promise<string[]> {
-  if (_allIconNamesCache) return _allIconNamesCache;
-  if (!_loadingPromise) {
-    _loadingPromise = import("lucide-react").then((mod) => {
-      _allIconNamesCache = Object.keys(mod.icons).sort();
-      return _allIconNamesCache;
-    });
-  }
-  return _loadingPromise;
+  await loadLucideModule();
+  return Object.keys(getCache()).sort();
 }
 
 // ========== 精选图标（站点常用） ==========
@@ -115,7 +135,7 @@ export const ICON_NAMES = [
 ] as const;
 
 // ========== 具名图标查找表（无 import *，tree-shake 友好） ==========
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Folder,
   FolderOpen,
   FolderClosed,
@@ -187,9 +207,11 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Database,
 };
 
-// ========== 图标渲染 ==========
-export function getCategoryIcon(iconName?: string | null, className?: string) {
-  if (!iconName) return <Folder className={className} />;
-  const Comp = ICON_MAP[iconName];
-  return Comp ? <Comp className={className} /> : <Folder className={className} />;
+// ========== 图标解析（共用的纯查找逻辑） ==========
+/** 按名称获取图标组件（ICON_MAP 优先，缓存兜底）；供 DynamicIcon 使用 */
+export function getIconComponent(name: string): React.ComponentType<{ className?: string }> | undefined {
+  return ICON_MAP[name] ?? getCache()[name] ?? undefined;
 }
+
+/** 供 DynamicIcon 使用的全量 lucide 模块加载器 */
+export { loadLucideModule };
