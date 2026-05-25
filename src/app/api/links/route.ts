@@ -9,28 +9,27 @@ export async function GET(request: Request) {
   try {
     const session = await auth();
     const userId = session?.user?.id;
-    const isAuthenticated = !!userId;
 
     const { searchParams } = new URL(request.url);
     const categoryId = searchParams.get("categoryId");
-    const includePrivate = isAuthenticated && searchParams.get("includePrivate") === "true";
     const page = parseInt(searchParams.get("page") || "1", 10) || 1;
     const pageSize = parseInt(searchParams.get("pageSize") || "50", 10) || 50;
     const skip = (page - 1) * pageSize;
 
     const where: Record<string, unknown> = {};
-    // 未登录用户只看公开链接；已登录用户只看自己的链接
+    if (categoryId) where.categoryId = categoryId;
+
     if (userId) {
-      where.userId = userId;
+      // 登录后：自己的全部链接 + 别人公开的链接
+      where.OR = [{ userId }, { isPrivate: false }];
     } else {
+      // 未登录：只看公开链接
       where.isPrivate = false;
     }
-    if (categoryId) where.categoryId = categoryId;
-    if (!includePrivate) where.isPrivate = false;
 
-    // SWR 缓存，前端页面和后台管理共用同一套查询
+    // SWR 缓存
     const uid = userId || "anon";
-    const cacheKey = `links:api:${uid}:${categoryId || "all"}:${includePrivate ? "priv" : "pub"}:p${page}`;
+    const cacheKey = `links:api:${uid}:${categoryId || "all"}:p${page}`;
     const links = await swr(cacheKey, () => {
       return prisma.link.findMany({
         where,

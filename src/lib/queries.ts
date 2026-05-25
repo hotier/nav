@@ -32,8 +32,10 @@ export const getAllLinks = cache(async (userId?: string) => {
   return swr(cacheKey, () => {
     const where: Record<string, unknown> = {};
     if (userId) {
-      where.userId = userId;
+      // 登录后：自己的全部链接 + 别人公开的链接
+      where.OR = [{ userId }, { isPrivate: false }];
     } else {
+      // 未登录：只看公开链接
       where.isPrivate = false;
     }
     return prisma.link.findMany({
@@ -49,12 +51,19 @@ export const getAllLinks = cache(async (userId?: string) => {
 export async function searchLinks(query: string, userId?: string) {
   const results = await prisma.link.findMany({
     where: {
-      userId: userId || undefined,
-      isPrivate: userId ? undefined : false,
-      OR: [
-        { title: { contains: query } },
-        { description: { contains: query } },
-        { url: { contains: query } },
+      AND: [
+        // 可见性：登录后看自己的全部 + 别人公开；未登录只看公开
+        userId
+          ? { OR: [{ userId }, { isPrivate: false }] }
+          : { isPrivate: false },
+        // 文本搜索
+        {
+          OR: [
+            { title: { contains: query } },
+            { description: { contains: query } },
+            { url: { contains: query } },
+          ],
+        },
       ],
     },
     include: { category: { select: { id: true, name: true } } },
@@ -108,13 +117,11 @@ export function invalidateLinks(userId?: string, categoryId?: string): void {
       keys.push(`links:cat:${categoryId}:${userId}`);
       keys.push(`links:cat:${categoryId}:anon`);
       // 2. 精确清除 API 缓存中与该分类相关的 key（含 :p${page} 后缀）
-      invalidateByPrefix(`links:api:${userId}:${categoryId}:priv:`);
-      invalidateByPrefix(`links:api:${userId}:${categoryId}:pub:`);
-      invalidateByPrefix(`links:api:${userId}:all:priv:`);
-      invalidateByPrefix(`links:api:${userId}:all:pub:`);
+      invalidateByPrefix(`links:api:${userId}:${categoryId}:`);
+      invalidateByPrefix(`links:api:${userId}:all:`);
       // 3. 公开链接变更也会影响匿名用户的 API 缓存
-      invalidateByPrefix(`links:api:anon:${categoryId}:pub:`);
-      invalidateByPrefix(`links:api:anon:all:pub:`);
+      invalidateByPrefix(`links:api:anon:${categoryId}:`);
+      invalidateByPrefix(`links:api:anon:all:`);
     } else {
       // ====== 批量操作兜底 ======
       // 没有分类信息时，只能清除该用户所有分类 + 所有 API 缓存

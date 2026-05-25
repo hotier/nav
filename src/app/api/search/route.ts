@@ -15,12 +15,19 @@ export async function GET(request: NextRequest) {
 
     const links = await prisma.link.findMany({
       where: {
-        userId: userId || undefined,
-        isPrivate: userId ? undefined : false,
-        OR: [
-          { title: { contains: query } },
-          { description: { contains: query } },
-          { url: { contains: query } },
+        AND: [
+          // 可见性：登录后看自己的全部 + 别人公开；未登录只看公开
+          userId
+            ? { OR: [{ userId }, { isPrivate: false }] }
+            : { isPrivate: false },
+          // 文本搜索
+          {
+            OR: [
+              { title: { contains: query } },
+              { description: { contains: query } },
+              { url: { contains: query } },
+            ],
+          },
         ],
       },
       include: {
