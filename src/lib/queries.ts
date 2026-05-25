@@ -112,15 +112,23 @@ export function invalidateLinks(userId?: string, categoryId?: string): void {
       invalidateByPrefix(`links:api:${userId}:${categoryId}:pub:`);
       invalidateByPrefix(`links:api:${userId}:all:priv:`);
       invalidateByPrefix(`links:api:${userId}:all:pub:`);
+      // 3. 公开链接变更也会影响匿名用户的 API 缓存
+      invalidateByPrefix(`links:api:anon:${categoryId}:pub:`);
+      invalidateByPrefix(`links:api:anon:all:pub:`);
     } else {
       // ====== 批量操作兜底 ======
       // 没有分类信息时，只能清除该用户所有分类 + 所有 API 缓存
       invalidateByPrefix(`links:cat:`);
       invalidateByPrefix(`links:api:${userId}`);
+      invalidateByPrefix(`links:api:anon`);
     }
   } else if (categoryId) {
     // 无用户但有分类（罕见，兜底用 prefix）
     invalidateByPrefix(`links:cat:${categoryId}`);
+    invalidateByPrefix(`links:api:anon:${categoryId}`);
+  } else {
+    // 无用户无分类（如初始状态），清除所有匿名缓存
+    invalidateByPrefix(`links:api:anon`);
   }
 
   // 匿名用户全量链接列表
