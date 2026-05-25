@@ -66,7 +66,7 @@ providers.push(
   })
 );
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const { handlers, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers,
   // 优先级：Vercel 环境变量 > 构建时注入的本地文件 > undefined

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateCategorySchema } from "@/lib/validators";
-import { invalidateCategories } from "@/lib/queries";
+import { invalidateCategories, incrementTableVersion } from "@/lib/queries";
 
 export async function GET(
   request: Request,
@@ -77,6 +77,7 @@ export async function PUT(
     });
 
     invalidateCategories();
+    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
 
     return NextResponse.json(category);
   } catch (error) {
@@ -113,6 +114,7 @@ export async function DELETE(
     });
 
     invalidateCategories();
+    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
 
     return NextResponse.json({ success: true });
   } catch (error) {

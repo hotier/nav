@@ -177,6 +177,18 @@ function LoginForm() {
           </button>
         </div>
 
+        {/* 修改密码入口 */}
+        {isLogin && (
+          <div className="text-center mt-3">
+            <Link
+              href="/reset-pwd"
+              className="text-xs text-slate-400 dark:text-slate-400 hover:text-blue-500 transition-colors"
+            >
+              忘记密码 / 修改密码
+            </Link>
+          </div>
+        )}
+
         {/* Back to home */}
         <p className="text-center mt-4 text-sm text-slate-400 dark:text-slate-400">
           <Link href="/" className="hover:text-blue-500 transition-colors">

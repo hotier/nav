@@ -39,10 +39,6 @@ export function invalidateByPrefix(prefix: string): void {
   }
 }
 
-export function cacheSize(): number {
-  return store.size;
-}
-
 /**
  * SWR 读取：立即返回缓存，后台异步刷新
  * @param key    缓存键（唯一标识数据源）

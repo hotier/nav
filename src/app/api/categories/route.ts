@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createCategorySchema } from "@/lib/validators";
 import { generateSlug } from "@/lib/slug";
 import { swr } from "@/lib/cache";
-import { invalidateCategories } from "@/lib/queries";
+import { invalidateCategories, incrementTableVersion } from "@/lib/queries";
 
 export async function GET() {
   try {
@@ -73,6 +73,7 @@ export async function POST(request: Request) {
 
     // 清除缓存，下次请求从数据库拉取最新数据
     invalidateCategories();
+    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
 
     return NextResponse.json(category, { status: 201 });
   } catch (error) {

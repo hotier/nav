@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { readPageCache, writePageCache } from "@/lib/cache-client";
 import { proxyImageUrl } from "@/lib/utils";
 import toast from "react-hot-toast";
 
@@ -24,7 +25,8 @@ interface Profile {
 export default function AccountPage() {
   const { update } = useSession();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // 表单
   const [name, setName] = useState("");
@@ -35,17 +37,15 @@ export default function AccountPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
-    // 从 localStorage 预加载，避免首次加载空白
-    try {
-      const cached = localStorage.getItem("nav_profile_cache");
-      if (cached) {
-        const data: Profile = JSON.parse(cached);
-        setProfile(data);
-        setName(data.name || "");
-        setEmail(data.email || "");
-        setImage(data.image || "");
-      }
-    } catch { /* ignore */ }
+    // 从缓存预加载，避免首次加载空白
+    const cached = readPageCache<Profile>("Profile", 1);
+    if (cached && cached.data.length > 0) {
+      const data = cached.data[0];
+      setProfile(data);
+      setName(data.name || "");
+      setEmail(data.email || "");
+      setImage(data.image || "");
+    }
     fetchProfile();
   }, []);
 
@@ -58,7 +58,7 @@ export default function AccountPage() {
         setName(data.name || "");
         setEmail(data.email || "");
         setImage(data.image || "");
-        try { localStorage.setItem("nav_profile_cache", JSON.stringify(data)); } catch { /* ignore */ }
+        writePageCache("Profile", 1, [data], 1, 0);
       }
     } catch {
       toast.error("获取账户信息失败");
@@ -66,7 +66,7 @@ export default function AccountPage() {
   };
 
   const handleUpdateProfile = async () => {
-    setIsSaving(true);
+    setIsSavingProfile(true);
     try {
       const body: Record<string, string> = {};
       if (name !== (profile?.name || "")) body.name = name;
@@ -75,7 +75,7 @@ export default function AccountPage() {
 
       if (Object.keys(body).length === 0) {
         toast.error("没有修改任何信息");
-        setIsSaving(false);
+        setIsSavingProfile(false);
         return;
       }
 
@@ -97,7 +97,7 @@ export default function AccountPage() {
     } catch {
       toast.error("更新失败");
     } finally {
-      setIsSaving(false);
+      setIsSavingProfile(false);
     }
   };
 
@@ -119,7 +119,7 @@ export default function AccountPage() {
       return;
     }
 
-    setIsSaving(true);
+    setIsChangingPassword(true);
     try {
       const res = await fetch("/api/account", {
         method: "PUT",
@@ -141,7 +141,7 @@ export default function AccountPage() {
     } catch {
       toast.error("修改密码失败");
     } finally {
-      setIsSaving(false);
+      setIsChangingPassword(false);
     }
   };
 
@@ -265,9 +265,9 @@ export default function AccountPage() {
                 注册时间：{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString("zh-CN") : "-"}
               </div>
 
-              <Button onClick={handleUpdateProfile} disabled={isSaving} className="w-full">
+              <Button onClick={handleUpdateProfile} disabled={isSavingProfile} className="w-full">
                 <Save className="h-4 w-4 mr-2" />
-                {isSaving ? "保存中..." : "保存个人信息"}
+                {isSavingProfile ? "保存中..." : "保存个人信息"}
               </Button>
             </CardContent>
           </Card>
@@ -317,12 +317,12 @@ export default function AccountPage() {
                   </div>
                   <Button
                     onClick={handleChangePassword}
-                    disabled={isSaving}
+                    disabled={isChangingPassword}
                     className="w-full"
                     variant="secondary"
                   >
                     <Key className="h-4 w-4 mr-2" />
-                    {isSaving ? "修改中..." : "修改密码"}
+                    {isChangingPassword ? "修改中..." : "修改密码"}
                   </Button>
                 </>
               ) : (

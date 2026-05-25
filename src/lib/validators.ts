@@ -40,14 +40,3 @@ export const updateCategorySchema = z.object({
 export const searchSchema = z.object({
   query: z.string().min(1, "搜索关键词不能为空"),
 });
-
-export const importSchema = z.object({
-  data: z.string(),
-  format: z.enum(["html", "json"]),
-  categoryId: z.string().optional(),
-});
-
-export const reorderSchema = z.object({
-  itemIds: z.array(z.string()),
-  categoryId: z.string().optional(),
-});

@@ -35,13 +35,6 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
     setIsHydrated(true);
   }, []);
 
-  // 同步 links 到 localStorage，确保内联编辑后缓存不滞后
-  useEffect(() => {
-    try {
-      localStorage.setItem("nav_links_cache", JSON.stringify(links));
-    } catch { /* ignore */ }
-  }, [links]);
-
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -92,6 +85,16 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
   };
 
   const handleUpdate = async (id: string, data: Partial<LinkType>) => {
+    const prevLinks = links;
+    // 乐观更新 UI（策略4：先更新本地缓存+视图，页面瞬时响应）
+    setLinks((prev) =>
+      prev
+        .map((l) => (l.id === id ? { ...l, ...data } : l))
+        .sort((a, b) => {
+          if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+          return a.sortOrder - b.sortOrder;
+        })
+    );
     try {
       const response = await fetch(`/api/links/${id}`, {
         method: "PUT",
@@ -103,7 +106,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
         const updated = await response.json();
         setLinks((prev) => {
           const next = prev.map((link) => (link.id === id ? { ...link, ...updated } : link));
-          // 置顶切换后按规则重排序：置顶在前 → sortOrder 升序
+          // 置顶切换后按规则重排序
           return next.sort((a, b) => {
             if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
             return a.sortOrder - b.sortOrder;
@@ -111,9 +114,12 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
         });
         toast.success("更新成功");
       } else {
+        // 回滚
+        setLinks(prevLinks);
         toast.error("更新失败");
       }
     } catch {
+      setLinks(prevLinks);
       toast.error("更新失败");
     }
   };
@@ -121,18 +127,24 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
   const handleDelete = async (id: string) => {
     if (!confirm("确定要删除这个链接吗？")) return;
 
+    const prevLinks = links;
+    // 乐观删除（策略4：先更新视图，页面瞬时响应）
+    setLinks((prev) => prev.filter((link) => link.id !== id));
+
     try {
       const response = await fetch(`/api/links/${id}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
-        setLinks((prev) => prev.filter((link) => link.id !== id));
         toast.success("删除成功");
       } else {
+        // 回滚
+        setLinks(prevLinks);
         toast.error("删除失败");
       }
     } catch {
+      setLinks(prevLinks);
       toast.error("删除失败");
     }
   };

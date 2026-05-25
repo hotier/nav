@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { DynamicIcon } from "@/components/DynamicIcon";
 import {
@@ -24,8 +24,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  optimisticAddToCache,
+  rollbackCache,
+} from "@/lib/cache-client";
 import toast from "react-hot-toast";
-import type { Category } from "@/types";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -34,12 +37,14 @@ interface MainLayoutProps {
     slug?: string | null;
     name: string;
     icon?: string | null;
+    parentId?: string | null;
     _count?: { links: number };
     children?: Array<{
       id: string;
       slug?: string | null;
       name: string;
       icon?: string | null;
+      parentId?: string | null;
       _count?: { links: number };
     }>;
   }>;
@@ -48,6 +53,8 @@ interface MainLayoutProps {
 export function MainLayout({ children, categories }: MainLayoutProps) {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [menuPinned, setMenuPinned] = useState(false);
@@ -57,6 +64,14 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
   const searchRef = useRef<HTMLInputElement>(null);
   const avatarRef = useRef<HTMLDivElement>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 同步 URL 搜索参数到搜索框，确保搜索结果页不清除搜索词
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q) {
+      setSearchQuery(q);
+    }
+  }, [searchParams]);
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -128,6 +143,10 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
     isPrivate: boolean;
   }) => {
     setIsSubmitting(true);
+    setShowAddLink(false);
+    // 乐观写入缓存（策略4：先更新本地缓存，页面瞬时响应）
+    const { previousData, previousTotal } = optimisticAddToCache("Link", 1, data as unknown as Record<string, unknown>);
+
     try {
       const response = await fetch("/api/links", {
         method: "POST",
@@ -137,13 +156,14 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
 
       if (response.ok) {
         toast.success("链接添加成功");
-        setShowAddLink(false);
-        window.location.reload();
       } else {
+        // 回滚缓存
+        rollbackCache("Link", 1, previousData, previousTotal);
         const error = await response.json();
         toast.error(error.error || "添加失败");
       }
     } catch {
+      rollbackCache("Link", 1, previousData, previousTotal);
       toast.error("添加失败");
     } finally {
       setIsSubmitting(false);
@@ -168,27 +188,29 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
 
             {/* Center - Search */}
             <div className="flex-1 max-w-xl px-8 hidden sm:block">
-              <form action="/search" method="get">
-                <div className="relative">
-                  <input
-                    ref={searchRef}
-                    type="text"
-                    name="q"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="搜索书签… (按 / 快速聚焦)"
-                    className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 dark:bg-slate-700/50 dark:border-slate-600/50 focus:bg-white dark:focus:bg-slate-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-sm"
-                  />
-                  <svg
-                    className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-              </form>
+              <div className="relative">
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && searchQuery.trim()) {
+                      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                    }
+                  }}
+                  placeholder="搜索书签… (按 / 快速聚焦)"
+                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 text-slate-800 dark:bg-slate-700/50 dark:border-slate-600/50 dark:text-white dark:placeholder-slate-400 focus:bg-white dark:focus:bg-slate-700/80 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-sm"
+                />
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
             </div>
 
             {/* Right - Actions */}
@@ -280,9 +302,6 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
               >
                 <Home className="h-4 w-4" />
                 全部链接
-                <span className={cn("ml-auto text-xs px-2 py-0.5 rounded-full", pathname === "/" ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700")}>
-                  {categories.reduce((acc, cat) => acc + (cat._count?.links || 0), 0)}
-                </span>
               </Link>
 
               {categories.map((category) => (
@@ -298,11 +317,6 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                   >
                     <DynamicIcon name={category.icon || "Folder"} className="h-4 w-4" />
                     <span className="flex-1 truncate">{category.name}</span>
-                    {category._count && (
-                      <span className={cn("text-xs px-2 py-0.5 rounded-full", pathname === `/category/${category.slug}` ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700")}>
-                        {category._count.links}
-                      </span>
-                    )}
                   </Link>
                   {category.children && category.children.length > 0 && (
                     <div className="ml-4 mt-1 space-y-1">
@@ -407,7 +421,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
             <DialogTitle>添加链接</DialogTitle>
           </DialogHeader>
           <LinkForm
-            categories={categories}
+            categories={categories.filter((c) => !c.parentId)}
             onSubmit={handleAddLink}
             onCancel={() => setShowAddLink(false)}
             isSubmitting={isSubmitting}

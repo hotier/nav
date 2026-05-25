@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateLinkSchema } from "@/lib/validators";
-import { invalidateLinks, invalidateLinksWithOldCategory } from "@/lib/queries";
+import { invalidateLinks, invalidateLinksWithOldCategory, incrementTableVersion } from "@/lib/queries";
 
 export async function GET(
   request: Request,
@@ -100,6 +100,7 @@ export async function PUT(
     const link = await prisma.link.update({
       where: { id },
       data: result.data,
+      include: { category: { select: { id: true, name: true, icon: true } } },
     });
 
     // 如果分类发生了变更，需同时清新旧两个分类的缓存
@@ -115,6 +116,7 @@ export async function PUT(
     } else {
       invalidateLinks(existing.userId, existing.categoryId);
     }
+    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
 
     return NextResponse.json(link);
   } catch (error) {
@@ -151,6 +153,7 @@ export async function DELETE(
     });
 
     invalidateLinks(existing.userId, existing.categoryId);
+    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
 
     return NextResponse.json({ success: true });
   } catch (error) {

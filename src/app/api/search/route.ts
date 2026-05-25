@@ -1,7 +1,61 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { searchSchema } from "@/lib/validators";
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await auth();
+    const userId = session?.user?.id;
+    const query = request.nextUrl.searchParams.get("q") || "";
+
+    if (!query.trim()) {
+      return NextResponse.json([], { status: 200 });
+    }
+
+    const links = await prisma.link.findMany({
+      where: {
+        userId: userId || undefined,
+        isPrivate: userId ? undefined : false,
+        OR: [
+          { title: { contains: query } },
+          { description: { contains: query } },
+          { url: { contains: query } },
+        ],
+      },
+      include: {
+        category: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
+      take: 50,
+    });
+
+    // Scoring for sorted results
+    const q = query.toLowerCase();
+    const scored = links
+      .map((link) => {
+        let score = 0;
+        if (link.title.toLowerCase().includes(q)) score += 3;
+        if (link.url.toLowerCase().includes(q)) score += 2;
+        if (link.description?.toLowerCase().includes(q)) score += 1;
+        return { link, score };
+      })
+      .sort((a, b) => {
+        if (a.link.isPinned !== b.link.isPinned) return a.link.isPinned ? -1 : 1;
+        return b.score - a.score || a.link.sortOrder - b.link.sortOrder;
+      });
+
+    return NextResponse.json(scored.map((s) => s.link));
+  } catch (error) {
+    console.error("Failed to search:", error);
+    return NextResponse.json(
+      { error: "搜索失败" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {

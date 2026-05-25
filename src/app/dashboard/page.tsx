@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React from "react";
 import { useSession } from "next-auth/react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Link2, Folder, Globe, Lock, Sparkles, Zap, Archive } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { useDataCache } from "@/hooks/useDataCache";
 
 interface DashboardStats {
   totalLinks: number;
@@ -14,49 +15,22 @@ interface DashboardStats {
   privateLinks: number;
 }
 
-const CACHE_KEY = "nav_dashboard_stats";
 const EMPTY: DashboardStats = { totalLinks: 0, totalCategories: 0, publicLinks: 0, privateLinks: 0 };
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
-  const [stats, setStats] = useState<DashboardStats>(() => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      return cached ? JSON.parse(cached) : EMPTY;
-    } catch {
-      return EMPTY;
-    }
-  });
-  const [isFirstLoad, setIsFirstLoad] = useState(() => {
-    try {
-      return !localStorage.getItem(CACHE_KEY);
-    } catch {
-      return true;
-    }
-  });
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await fetch("/api/dashboard/stats");
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-        try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-        } catch { /* ignore */ }
-      }
-    } catch {
-      // 静默失败，已有缓存兜底
-    } finally {
-      setIsFirstLoad(false);
-    }
-  }, []);
+  const { data: cacheData, loading } = useDataCache([
+    {
+      name: "DashboardStats",
+      fetch: () =>
+        fetch("/api/dashboard/stats")
+          .then((r) => r.json())
+          .then((d: DashboardStats) => ({ data: [d], total: 1 })),
+    },
+  ]);
 
-  useEffect(() => {
-    if (status === "authenticated") {
-      fetchStats();
-    }
-  }, [status, fetchStats]);
+  const stats: DashboardStats = (cacheData["DashboardStats"]?.[0] as DashboardStats) || EMPTY;
 
   if (status === "loading") return null;
 
@@ -69,7 +43,7 @@ export default function DashboardPage() {
 
       <div className="dashboard-container space-y-8">
         {/* Stats Grid */}
-        {isFirstLoad && isEmpty ? (
+        {loading && isEmpty ? (
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="stat-card p-6 animate-pulse">

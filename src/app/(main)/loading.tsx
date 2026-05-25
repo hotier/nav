@@ -11,7 +11,7 @@ export default function MainLoading() {
       </div>
 
       {/* 卡片网格骨架 */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}

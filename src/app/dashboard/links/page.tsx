@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Search, Trash2, ExternalLink, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Pencil, ChevronDown, Check, Loader2, Home } from "lucide-react";
+import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,11 @@ import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/components/DynamicIcon";
 import type { Link as LinkType, Category } from "@/types";
+import {
+  readPageCache,
+  writePageCache,
+} from "@/lib/cache-client";
+import { useDataCache } from "@/hooks/useDataCache";
 
 function highlightText(text: string, query: string) {
   if (!query.trim()) return text;
@@ -41,22 +46,26 @@ function highlightText(text: string, query: string) {
 }
 
 export default function LinksPage() {
-  const [links, setLinks] = useState<LinkType[]>(() => {
-    try {
-      const cached = localStorage.getItem("nav_links_cache");
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [categories, setCategories] = useState<Category[]>(() => {
-    try {
-      const cached = localStorage.getItem("nav_categories_cache");
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  // 统一数据获取（缓存优先 + 后台版本同步）
+  const { data: cacheData, setData } = useDataCache([
+    {
+      name: "Link",
+      fetch: () =>
+        fetch("/api/links?includePrivate=true&pageSize=200")
+          .then((r) => r.json())
+          .then((d: { data: LinkType[]; total: number }) => d),
+    },
+    {
+      name: "Category",
+      fetch: () =>
+        fetch("/api/categories")
+          .then((r) => r.json())
+          .then((d: Category[]) => ({ data: d, total: d.length })),
+    },
+  ]);
+
+  const links = (cacheData["Link"] || []) as LinkType[];
+  const categories = (cacheData["Category"] || []) as Category[];
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,103 +136,122 @@ export default function LinksPage() {
 
   // 逐行访问权限下拉
   const [linkAccessId, setLinkAccessId] = useState<string | null>(null);
-  const [linkAccessPos, setLinkAccessPos] = useState<{ top: number; left: number } | null>(null);
   const linkAccessMenuRef = useRef<HTMLDivElement>(null);
   const [linkUpdating, setLinkUpdating] = useState<Record<string, boolean>>({});
+  const [categoryUpdating, setCategoryUpdating] = useState<Record<string, boolean>>({});
   useEffect(() => {
     if (!linkAccessId) return;
     const handler = (e: MouseEvent) => {
       if (linkAccessMenuRef.current && !linkAccessMenuRef.current.contains(e.target as Node)) {
         setLinkAccessId(null);
-        setLinkAccessPos(null);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [linkAccessId]);
 
+  // 逐行分类下拉
+  const [linkCategoryId, setLinkCategoryId] = useState<string | null>(null);
+  const linkCategoryMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!linkCategoryId) return;
+    const handler = (e: MouseEvent) => {
+      if (linkCategoryMenuRef.current && !linkCategoryMenuRef.current.contains(e.target as Node)) {
+        setLinkCategoryId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [linkCategoryId]);
+
+  const handleChangeCategory = async (linkId: string, newCategoryId: string) => {
+    setLinkCategoryId(null);
+    const prevLinks = links;
+    const localCat = categories.find((c) => c.id === newCategoryId);
+    // 乐观更新
+    setData("Link", (prev) =>
+      prev.map((l) =>
+        (l as LinkType).id === linkId
+          ? { ...(l as LinkType), categoryId: newCategoryId, category: localCat }
+          : l
+      )
+    );
+    setCategoryUpdating((prev) => ({ ...prev, [linkId]: true }));
+    try {
+      const res = await fetch(`/api/links/${linkId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId: newCategoryId }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setData("Link", (prev) =>
+          prev.map((l) =>
+            (l as LinkType).id === linkId
+              ? { ...(l as LinkType), categoryId: updated.categoryId, category: updated.category || localCat }
+              : l
+          )
+        );
+        toast.success("分类已更新");
+      } else {
+        setData("Link", () => prevLinks);
+        const err = await res.json();
+        toast.error(err.error || "操作失败");
+      }
+    } catch {
+      setData("Link", () => prevLinks);
+      toast.error("操作失败");
+    } finally {
+      setCategoryUpdating((prev) => ({ ...prev, [linkId]: false }));
+    }
+  };
+
   const handleToggleAccess = async (linkId: string, currentPrivate: boolean) => {
     setLinkAccessId(null);
-    setLinkAccessPos(null);
+    const prevLinks = links;
+    const newPrivate = !currentPrivate;
+    // 乐观更新
+    setData("Link", (prev) =>
+      prev.map((l) => (l as LinkType).id === linkId ? { ...(l as LinkType), isPrivate: newPrivate } : l)
+    );
     setLinkUpdating((prev) => ({ ...prev, [linkId]: true }));
     try {
       const res = await fetch(`/api/links/${linkId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isPrivate: !currentPrivate }),
+        body: JSON.stringify({ isPrivate: newPrivate }),
       });
       if (res.ok) {
         const updated = await res.json();
-        setLinks((prev) =>
-          prev.map((l) => (l.id === linkId ? { ...l, isPrivate: updated.isPrivate } : l))
+        setData("Link", (prev) =>
+          prev.map((l) => (l as LinkType).id === linkId ? { ...(l as LinkType), isPrivate: updated.isPrivate } : l)
         );
         toast.success(updated.isPrivate ? "已设为私有" : "已设为公开");
       } else {
+        setData("Link", () => prevLinks);
         const err = await res.json();
         toast.error(err.error || "操作失败");
       }
     } catch {
+      setData("Link", () => prevLinks);
       toast.error("操作失败");
     } finally {
       setLinkUpdating((prev) => ({ ...prev, [linkId]: false }));
     }
   };
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [linksRes, categoriesRes] = await Promise.all([
-        fetch("/api/links?includePrivate=true"),
-        fetch("/api/categories"),
-      ]);
-
-      if (linksRes.ok && categoriesRes.ok) {
-        const linksData = await linksRes.json();
-        const categoriesData = await categoriesRes.json();
-        setLinks(linksData);
-        setCategories(categoriesData);
-        try {
-          localStorage.setItem("nav_links_cache", JSON.stringify(linksData));
-          localStorage.setItem("nav_categories_cache", JSON.stringify(categoriesData));
-        } catch { /* ignore */ }
-      }
-    } catch (error) {
-      console.error("Failed to fetch data:", error);
+  // 从缓存恢复连通性检测结果
+  useEffect(() => {
+    const cached = readPageCache<Record<string, string>>("CheckResult", 1);
+    if (cached && cached.data.length > 0) {
+      setCheckResults(cached.data[0]);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // links / categories 状态变化时同步到 localStorage（覆盖 CRUD 操作）
-  useEffect(() => {
-    if (links.length > 0) {
-      try { localStorage.setItem("nav_links_cache", JSON.stringify(links)); } catch { /* ignore */ }
-    }
-  }, [links]);
-
-  useEffect(() => {
-    if (categories.length > 0) {
-      try { localStorage.setItem("nav_categories_cache", JSON.stringify(categories)); } catch { /* ignore */ }
-    }
-  }, [categories]);
-
-  // 从 localStorage 恢复连通性检测结果
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("nav_check_results");
-      if (saved) {
-        setCheckResults(JSON.parse(saved));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // 连通性检测结果变化时持久化到 localStorage
+  // 连通性检测结果变化时持久化到缓存
   useEffect(() => {
     if (Object.keys(checkResults).length > 0) {
-      localStorage.setItem("nav_check_results", JSON.stringify(checkResults));
+      writePageCache("CheckResult", 1, [checkResults], 1, 0);
     }
   }, [checkResults]);
 
@@ -263,7 +291,6 @@ export default function LinksPage() {
           isPrivate: false,
           isPinned: false,
         });
-        fetchData();
         // 创建/更新后自动检测连通性
         handleCheckSingle(savedLink.id, savedLink.url);
       } else {
@@ -280,6 +307,9 @@ export default function LinksPage() {
   const handleDeleteLink = async (id: string) => {
     if (!confirm("确定要删除这个链接吗？")) return;
 
+    const prevLinks = links;
+    setData("Link", (prev) => prev.filter((l) => (l as LinkType).id !== id));
+
     try {
       const response = await fetch(`/api/links/${id}`, {
         method: "DELETE",
@@ -287,11 +317,12 @@ export default function LinksPage() {
 
       if (response.ok) {
         toast.success("链接已删除");
-        fetchData();
       } else {
+        setData("Link", () => prevLinks);
         toast.error("删除失败");
       }
     } catch {
+      setData("Link", () => prevLinks);
       toast.error("删除失败");
     }
   };
@@ -432,32 +463,36 @@ export default function LinksPage() {
     }
   };
 
-  const filteredLinks = links.filter((link) => {
-    // 搜索
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      !q ||
-      link.title.toLowerCase().includes(q) ||
-      link.url.toLowerCase().includes(q) ||
-      link.description?.toLowerCase().includes(q);
+  const filteredLinks = links
+    .filter((link) => {
+      // 搜索
+      const q = searchQuery.toLowerCase();
+      const matchesSearch =
+        !q ||
+        link.title.toLowerCase().includes(q) ||
+        link.url.toLowerCase().includes(q) ||
+        link.description?.toLowerCase().includes(q);
 
-    // 分类筛选
-    const matchesCategory =
-      categoryFilter === "all" || link.categoryId === categoryFilter;
+      // 分类筛选
+      const matchesCategory =
+        categoryFilter === "all" || link.categoryId === categoryFilter;
 
-    // 访问权限筛选
-    const matchesAccess =
-      accessFilter === "all" ||
-      (accessFilter === "private" && link.isPrivate) ||
-      (accessFilter === "public" && !link.isPrivate);
+      // 访问权限筛选
+      const matchesAccess =
+        accessFilter === "all" ||
+        (accessFilter === "private" && link.isPrivate) ||
+        (accessFilter === "public" && !link.isPrivate);
 
-    // 连通性筛选
-    const matchesConnectivity =
-      connectivityFilter === "all" ||
-      checkResults[link.id] === connectivityFilter;
+      // 连通性筛选
+      const matchesConnectivity =
+        connectivityFilter === "all" ||
+        checkResults[link.id] === connectivityFilter;
 
-    return matchesSearch && matchesCategory && matchesAccess && matchesConnectivity;
-  });
+      return matchesSearch && matchesCategory && matchesAccess && matchesConnectivity;
+    })
+    .sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
   const stats = {
     totalLinks: links.length,
@@ -743,7 +778,7 @@ export default function LinksPage() {
             </div>
           </div>
 
-          <div className="overflow-hidden">
+          <div className="overflow-visible">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -783,21 +818,54 @@ export default function LinksPage() {
                           {highlightText(link.url, searchQuery)}
                         </a>
                       </TableCell>
-                      <TableCell className={link.category?.name ? undefined : "text-muted-foreground"}>
-                        {link.category?.name || "-"}
+                      <TableCell>
+                        <div className="relative inline-block">
+                          <button
+                            onClick={() => {
+                              setLinkCategoryId(linkCategoryId === link.id ? null : link.id);
+                            }}
+                            disabled={categoryUpdating[link.id]}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1 bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600 dark:hover:bg-slate-700"
+                          >
+                            {categoryUpdating[link.id] ? (
+                              <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+                            ) : (
+                              <DynamicIcon name={link.category?.icon || "Folder"} className="h-3 w-3 text-slate-500" />
+                            )}
+                            {link.category?.name || "未分类"}
+                            <ChevronDown className="h-3 w-3 opacity-50" />
+                          </button>
+                          {linkCategoryId === link.id && (
+                            <div
+                              ref={linkCategoryMenuRef}
+                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[140px] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                            >
+                              {categories.map((c) => (
+                                <button
+                                  key={c.id}
+                                  onClick={() => handleChangeCategory(link.id, c.id)}
+                                  disabled={categoryUpdating[link.id]}
+                                  className={cn(
+                                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                                    link.categoryId === c.id
+                                      ? "text-slate-900 dark:text-white font-medium"
+                                      : "text-slate-600 dark:text-slate-400"
+                                  )}
+                                >
+                                  <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-slate-500" />
+                                  <span className="flex-1 text-left">{c.name}</span>
+                                  {link.categoryId === c.id && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="relative inline-block">
                           <button
-                            onClick={(e) => {
-                              if (linkAccessId === link.id) {
-                                setLinkAccessId(null);
-                                setLinkAccessPos(null);
-                              } else {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setLinkAccessPos({ top: rect.bottom + 4, left: rect.left + rect.width / 2 });
-                                setLinkAccessId(link.id);
-                              }
+                            onClick={() => {
+                              setLinkAccessId(linkAccessId === link.id ? null : link.id);
                             }}
                             disabled={linkUpdating[link.id]}
                             className={cn(
@@ -817,16 +885,10 @@ export default function LinksPage() {
                             {link.isPrivate ? "私有" : "公开"}
                             <ChevronDown className="h-3 w-3 opacity-50" />
                           </button>
-                          {linkAccessId === link.id && linkAccessPos && createPortal(
+                          {linkAccessId === link.id && (
                             <div
                               ref={linkAccessMenuRef}
-                              style={{
-                                position: "fixed",
-                                top: linkAccessPos.top,
-                                left: linkAccessPos.left,
-                                transform: "translateX(-50%)",
-                              }}
-                              className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
                             >
                               {([
                                 { value: false, label: "公开", Icon: Globe, color: "text-emerald-500" },
@@ -846,8 +908,7 @@ export default function LinksPage() {
                                   {link.isPrivate === value && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
                                 </button>
                               ))}
-                            </div>,
-                            document.body
+                            </div>
                           )}
                         </div>
                       </TableCell>
@@ -912,19 +973,11 @@ export default function LinksPage() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="h-8 w-8"
                             onClick={() => handleEditLink(link)}
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Edit className="h-4 w-4" />
                           </Button>
-                          <a
-                            href={link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <Button variant="ghost" size="icon">
-                              <ExternalLink className="h-4 w-4" />
-                            </Button>
-                          </a>
                           <Button
                             variant="ghost"
                             size="icon"

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createLinkSchema } from "@/lib/validators";
-import { invalidateLinks } from "@/lib/queries";
+import { invalidateLinks, incrementTableVersion } from "@/lib/queries";
 import { swr } from "@/lib/cache";
 
 export async function GET(request: Request) {
@@ -15,22 +15,30 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const categoryId = searchParams.get("categoryId");
     const includePrivate = searchParams.get("includePrivate") === "true";
+    const page = parseInt(searchParams.get("page") || "1", 10) || 1;
+    const pageSize = parseInt(searchParams.get("pageSize") || "50", 10) || 50;
+    const skip = (page - 1) * pageSize;
+
+    const where: Record<string, unknown> = { userId: session.user.id };
+    if (categoryId) where.categoryId = categoryId;
+    if (!includePrivate) where.isPrivate = false;
 
     // SWR 缓存，前端页面和后台管理共用同一套查询
-    const cacheKey = `links:api:${session.user.id}:${categoryId || "all"}:${includePrivate ? "priv" : "pub"}`;
+    const cacheKey = `links:api:${session.user.id}:${categoryId || "all"}:${includePrivate ? "priv" : "pub"}:p${page}`;
     const links = await swr(cacheKey, () => {
-      const where: Record<string, unknown> = { userId: session.user.id };
-      if (categoryId) where.categoryId = categoryId;
-      if (!includePrivate) where.isPrivate = false;
-
       return prisma.link.findMany({
         where,
-        include: { category: { select: { id: true, name: true } } },
+        include: { category: { select: { id: true, name: true, icon: true } } },
         orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
+        skip,
+        take: pageSize,
       });
     }, 30_000);
 
-    return NextResponse.json(links);
+    // 总数（轻量 COUNT，不缓存）
+    const total = await prisma.link.count({ where });
+
+    return NextResponse.json({ data: links, total });
   } catch (error) {
     console.error("Failed to fetch links:", error);
     return NextResponse.json(
@@ -101,6 +109,7 @@ export async function POST(request: Request) {
     });
 
     invalidateLinks(session.user.id, result.data.categoryId);
+    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
 
     return NextResponse.json(link, { status: 201 });
   } catch (error) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { invalidateUsers } from "@/lib/queries";
+import { invalidateUsers, incrementTableVersion } from "@/lib/queries";
 
 type Params = Promise<{ id: string }>;
 
@@ -57,6 +57,7 @@ export async function PATCH(
     });
 
     invalidateUsers();
+    incrementTableVersion("User").catch((e) => console.warn("[version] User递增失败:", e));
     return NextResponse.json(updated);
   } catch {
     return NextResponse.json({ error: "操作失败" }, { status: 500 });
@@ -94,5 +95,6 @@ export async function DELETE(
   await prisma.user.delete({ where: { id } });
 
   invalidateUsers();
+  incrementTableVersion("User").catch((e) => console.warn("[version] User递增失败:", e));
   return NextResponse.json({ success: true });
 }

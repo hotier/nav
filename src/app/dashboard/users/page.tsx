@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { Users, Shield, Trash2, User, Loader2, AlertTriangle, ChevronDown, Check } from "lucide-react";
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { proxyImageUrl, cn } from "@/lib/utils";
 import toast from "react-hot-toast";
+import { useDataCache } from "@/hooks/useDataCache";
 
 interface UserItem {
   id: string;
@@ -36,26 +37,12 @@ interface UserItem {
   _count: { links: number };
 }
 
-const CACHE_KEY = "nav_users_cache";
-
 export default function UsersPage() {
   const { data: session, status } = useSession();
-  // 初始化时同步读取 localStorage，消除首次渲染的 0→真实数据跳动
-  const [users, setUsers] = useState<UserItem[]>(() => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [isFirstLoad, setIsFirstLoad] = useState(() => {
-    try {
-      return !localStorage.getItem(CACHE_KEY);
-    } catch {
-      return true;
-    }
-  });
+  const { data: cacheData, loading, syncing: _syncing, setData } = useDataCache([
+    { name: "User", fetch: () => fetch("/api/users").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
+  ]);
+  const users = (cacheData["User"] || []) as UserItem[];
   const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [roleMenuUser, setRoleMenuUser] = useState<string | null>(null);
@@ -67,31 +54,11 @@ export default function UsersPage() {
     name: string;
   } | null>(null);
 
-  const fetchUsers = useCallback(async () => {
-    try {
-      const res = await fetch("/api/users");
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data);
-        try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-        } catch { /* ignore */ }
-      }
-    } catch {
-      // 静默失败，已有缓存数据兜底
-    } finally {
-      setIsFirstLoad(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (status === "authenticated") {
-      fetchUsers();
-    }
-  }, [status, fetchUsers]);
-
   const handleRoleToggle = async (userId: string, newRole: string) => {
     setRoleUpdating((prev) => ({ ...prev, [userId]: true }));
+    const prevUsers = [...users];
+    // 乐观更新 UI
+    setData("User", (prev) => (prev as UserItem[]).map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
     try {
       const res = await fetch(`/api/users/${userId}`, {
         method: "PATCH",
@@ -100,16 +67,15 @@ export default function UsersPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setUsers((prev) => {
-          const next = prev.map((u) => (u.id === userId ? { ...u, role: data.role } : u));
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-          return next;
-        });
+        setData("User", (prev) => (prev as UserItem[]).map((u) => (u.id === userId ? { ...u, role: data.role } : u)));
         toast.success(`角色已更新为 ${newRole === "admin" ? "管理员" : "普通用户"}`);
       } else {
+        // 回滚
+        setData("User", () => prevUsers);
         toast.error(data.error || "操作失败");
       }
     } catch {
+      setData("User", () => prevUsers);
       toast.error("操作失败");
     } finally {
       setRoleUpdating((prev) => ({ ...prev, [userId]: false }));
@@ -119,26 +85,29 @@ export default function UsersPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setIsDeleting(true);
+    const prevUsers = [...users];
+    const target = deleteTarget;
+    // 乐观删除
+    setData("User", (prev) => (prev as UserItem[]).filter((u) => u.id !== target.id));
+    setDeleteTarget(null);
+
     try {
-      const res = await fetch(`/api/users/${deleteTarget.id}`, {
+      const res = await fetch(`/api/users/${target.id}`, {
         method: "DELETE",
       });
       const data = await res.json();
       if (res.ok) {
-        setUsers((prev) => {
-          const next = prev.filter((u) => u.id !== deleteTarget.id);
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-          return next;
-        });
         toast.success("用户已删除");
       } else {
+        // 回滚
+        setData("User", () => prevUsers);
         toast.error(data.error || "删除失败");
       }
     } catch {
+      setData("User", () => prevUsers);
       toast.error("删除失败");
     } finally {
       setIsDeleting(false);
-      setDeleteTarget(null);
     }
   };
 
@@ -238,7 +207,7 @@ export default function UsersPage() {
         </div>
 
         {/* User Table */}
-        {isFirstLoad && users.length === 0 ? (
+        {loading && users.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
           </div>

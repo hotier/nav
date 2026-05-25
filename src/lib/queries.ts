@@ -25,21 +25,6 @@ export const getCategories = cache(async () => {
   );
 });
 
-export const getCategoryBySlug = cache(async (slug: string) => {
-  return swr(`category:slug:${slug}`, () =>
-    prisma.category.findFirst({
-      where: { slug },
-      include: {
-        children: {
-          include: { _count: { select: { links: true } } },
-        },
-        _count: { select: { links: true } },
-      },
-    }),
-  5 * 60_000 // TTL 5min
-  );
-});
-
 // ===================== 链接查询 =====================
 
 export const getAllLinks = cache(async (userId?: string) => {
@@ -56,38 +41,7 @@ export const getAllLinks = cache(async (userId?: string) => {
       include: { category: { select: { id: true, name: true } } },
       orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
     });
-  }, 2 * 60_000); // TTL 2min — 链接变动稍频繁，但也无需 30s 查一次
-});
-
-export const getLinksByCategory = cache(
-  async (categoryId: string, userId?: string) => {
-    const cacheKey = `links:cat:${categoryId}:${userId || "anon"}`;
-    return swr(cacheKey, () => {
-      const where: Record<string, unknown> = { categoryId };
-      if (userId) {
-        where.userId = userId;
-      } else {
-        where.isPrivate = false;
-      }
-      return prisma.link.findMany({
-        where,
-        include: { category: { select: { id: true, name: true } } },
-        orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
-      });
-    }, 2 * 60_000);
-  }
-);
-
-/** 管理后台用：获取用户所有链接列表（含分页支持的完整查询） */
-export const getDashboardLinks = cache(async (userId: string) => {
-  return swr(`links:dashboard:${userId}`, () =>
-    prisma.link.findMany({
-      where: { userId },
-      include: { category: { select: { id: true, name: true } } },
-      orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
-    }),
-  2 * 60_000
-  );
+  }, 2 * 60_000);
 });
 
 // ===================== 搜索（不缓存——查询变化太频繁） =====================
@@ -153,11 +107,11 @@ export function invalidateLinks(userId?: string, categoryId?: string): void {
       // 1. 该分类的链接列表（含当前用户 + 匿名）
       keys.push(`links:cat:${categoryId}:${userId}`);
       keys.push(`links:cat:${categoryId}:anon`);
-      // 2. 精确清除 API 缓存中与该分类相关的 key
-      keys.push(`links:api:${userId}:${categoryId}:priv`);
-      keys.push(`links:api:${userId}:${categoryId}:pub`);
-      keys.push(`links:api:${userId}:all:priv`);
-      keys.push(`links:api:${userId}:all:pub`);
+      // 2. 精确清除 API 缓存中与该分类相关的 key（含 :p${page} 后缀）
+      invalidateByPrefix(`links:api:${userId}:${categoryId}:priv:`);
+      invalidateByPrefix(`links:api:${userId}:${categoryId}:pub:`);
+      invalidateByPrefix(`links:api:${userId}:all:priv:`);
+      invalidateByPrefix(`links:api:${userId}:all:pub:`);
     } else {
       // ====== 批量操作兜底 ======
       // 没有分类信息时，只能清除该用户所有分类 + 所有 API 缓存
@@ -195,7 +149,38 @@ export function invalidateUsers(): void {
   deleteCached("users:all");
 }
 
-/** 仪表盘统计缓存失效（链接/分类变更后调用） */
-export function invalidateDashboardStats(): void {
-  invalidateByPrefix("dashboard:stats:");
+// ===================== 数据表版本号（客户端缓存同步） =====================
+
+/**
+ * 表数据变更后递增对应版本号。
+ * 版本号存储在 AppSetting 表，key 格式为 "version:TableName"。
+ *
+ * 客户端通过 GET /api/cache-version?table=X 获取版本号，
+ * 与本地缓存版本比对，不一致则重新拉取数据实现跨端同步。
+ */
+export async function incrementTableVersion(table: string): Promise<number> {
+  const key = `version:${table}`;
+
+  // 确保行存在
+  await prisma.appSetting.upsert({
+    where: { key },
+    create: { key, value: "0" },
+    update: {},
+  });
+
+  // 原子递增
+  await prisma.$executeRaw`
+    UPDATE "AppSetting"
+    SET "value" = (COALESCE("value"::int, 0) + 1)::text
+    WHERE "key" = ${key}
+  `;
+
+  // 读取新值
+  const setting = await prisma.appSetting.findUnique({ where: { key } });
+  const newVersion = parseInt(setting?.value || "0", 10);
+
+  // 清除 cache-version API 的 SWR 缓存，确保下一次请求拿到最新版本号
+  deleteCached(`cache-version:${table}`);
+
+  return newVersion;
 }

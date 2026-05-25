@@ -15,10 +15,6 @@ function register(id: symbol, start: Listener, done: Listener) {
   return () => listenerMap.delete(id);
 }
 
-/** 手动启动（如数据请求开始前调用） */
-export function startTopLoader() {
-  listenerMap.forEach(({ start }) => start());
-}
 /** 手动完成：可见时跳到 100% 再淡出，延迟阶段直接取消 */
 export function doneTopLoader() {
   listenerMap.forEach(({ done }) => done());

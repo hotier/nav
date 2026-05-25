@@ -246,6 +246,13 @@ export function LinkCard({
     window.open(link.url, "_blank", "noopener,noreferrer");
   }, [link.url]);
 
+  const handleCardClick = useCallback(() => {
+    // 如果用户正在选中文本，不打开发链接
+    const selection = window.getSelection();
+    if (selection && selection.toString().length > 0) return;
+    handleOpenLink();
+  }, [handleOpenLink]);
+
   const handleOpenAltLink = useCallback(() => {
     setContextMenuOpen(false);
     if (link.altUrl) {
@@ -283,7 +290,7 @@ export function LinkCard({
             ref={setNodeRef}
             style={style}
             className={`h-full group bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl border border-slate-200/50 dark:border-slate-700/50 p-4 hover:border-blue-400 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 ${isDragging ? "shadow-xl ring-2 ring-blue-400" : ""}`}
-            onClick={handleOpenLink}
+            onClick={handleCardClick}
           >
             <div className="flex items-start gap-3">
               {isDraggable && (
@@ -316,16 +323,19 @@ export function LinkCard({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   {link.isPinned && <span className="text-amber-500">📌</span>}
-                  <span className="font-semibold text-slate-800 dark:text-white truncate">{highlightText(link.title, searchQuery)}</span>
+                  <span
+                    className="font-semibold text-slate-800 dark:text-white truncate select-text cursor-text"
+                    title={link.title}
+                  >{highlightText(link.title, searchQuery)}</span>
                   {link.isPrivate && (
                     <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded flex-shrink-0">
                       私有
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400 dark:text-slate-500 truncate mb-1">{highlightText(link.url, searchQuery)}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 truncate mb-1 select-text" title={link.url}>{highlightText(link.url, searchQuery)}</p>
                 <p
-                  className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 min-h-[2rem]"
+                  className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 min-h-[2rem] select-text"
                   title={link.description || undefined}
                 >
                   {link.description ? highlightText(link.description, searchQuery) : ""}
@@ -428,7 +438,7 @@ export function LinkCard({
               isPrivate: link.isPrivate,
               isPinned: link.isPinned,
             }}
-            categories={categories}
+            categories={categories.filter((c) => !c.parentId)}
             onSubmit={handleEditSubmit}
             onCancel={() => setIsEditing(false)}
             submitLabel="保存"

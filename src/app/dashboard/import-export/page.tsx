@@ -14,6 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { readPageCache, writePageCache, getServerVersion } from "@/lib/cache-client";
 
 interface Category {
   id: string;
@@ -31,23 +32,27 @@ export default function ImportExportPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
-  // 初始化：从 localStorage 预加载分类列表
+  // 初始化：从缓存预加载分类列表
   useEffect(() => {
-    try {
-      const cached = localStorage.getItem("nav_categories_cache");
-      if (cached) setCategories(JSON.parse(cached));
-    } catch { /* ignore */ }
+    const cached = readPageCache<Category>("Category", 1);
+    if (cached && cached.data.length > 0) setCategories(cached.data);
   }, []);
 
   // Fetch categories on mount and after import
-  const fetchCategories = () => {
-    fetch("/api/categories")
-      .then((res) => res.json())
-      .then((data) => {
+  const fetchCategories = async () => {
+    try {
+      const [res, serverVersion] = await Promise.all([
+        fetch("/api/categories"),
+        getServerVersion("Category"),
+      ]);
+      if (res.ok) {
+        const data: Category[] = await res.json();
         setCategories(data);
-        try { localStorage.setItem("nav_categories_cache", JSON.stringify(data)); } catch { /* ignore */ }
-      })
-      .catch(console.error);
+        writePageCache("Category", 1, data, data.length, serverVersion || 1);
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { invalidateAll } from "@/lib/queries";
+import { invalidateAll, incrementTableVersion } from "@/lib/queries";
 import { z } from "zod";
 
 const importSchema = z.object({
@@ -173,6 +173,8 @@ export async function POST(request: Request) {
 
     // 导入完成后清除所有缓存，确保分类和链接列表都能获取到最新数据
     invalidateAll();
+    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
+    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
 
     return NextResponse.json({
       imported: createdLinks.count,
