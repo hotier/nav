@@ -9,12 +9,11 @@ import { invalidateCategories, incrementTableVersion } from "@/lib/queries";
 export async function GET() {
   try {
     const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "未授权" }, { status: 401 });
-    }
+    const userId = session?.user?.id;
 
-    // 使用 SWR 缓存（与前端共用数据源，但管理后台需要 links 字段）
-    const categories = await swr("admin:categories", () =>
+    // 使用 SWR 缓存，匿名用户也允许访问分类结构
+    const cacheKey = userId ? "admin:categories" : "anon:categories";
+    const categories = await swr(cacheKey, () =>
       prisma.category.findMany({
         include: {
           children: { orderBy: { sortOrder: "asc" } },

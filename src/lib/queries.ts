@@ -92,6 +92,7 @@ export async function searchLinks(query: string, userId?: string) {
 export function invalidateCategories(): void {
   invalidateByPrefix("categories");
   invalidateByPrefix("category:");
+  deleteCached("anon:categories"); // 匿名用户分类缓存
   invalidateByPrefix("links"); // 分类变更影响所有链接的归类展示，必须全清
   invalidateByPrefix("dashboard:stats:"); // 仪表盘统计也需刷新
 }
