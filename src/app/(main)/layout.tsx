@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getCategories } from "@/lib/queries";
 import { MainLayout } from "@/components/MainLayout";
 import type { Category } from "@/types";
@@ -10,8 +11,10 @@ export default async function MainLayoutWrapper({
   const categories = await getCategories();
 
   return (
-    <MainLayout categories={categories as unknown as Category[]}>
-      {children}
-    </MainLayout>
+    <Suspense fallback={<div className="min-h-screen" />}>
+      <MainLayout categories={categories as unknown as Category[]}>
+        {children}
+      </MainLayout>
+    </Suspense>
   );
 }
