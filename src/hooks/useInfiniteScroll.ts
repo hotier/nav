@@ -78,18 +78,9 @@ interface UseInfiniteScrollReturn<T> {
 
 // ==================== 工具函数 ====================
 
-/** 根据视口计算需要的条目数 */
-function calcViewportPageSize(config: AutoPageSizeConfig): number {
-  const cardHeight = config.cardHeight ?? 140;
-  const bufferRows = config.bufferRows ?? 2;
-  const columns =
-    typeof config.columns === "function"
-      ? config.columns()
-      : config.columns ?? 4;
-
-  const vh = window.innerHeight;
-  const rows = Math.ceil(vh / cardHeight) + bufferRows;
-  return Math.max(columns * 2, rows * columns); // 最少 2 行
+/** 返回固定分页数：桌面 40，移动 20 */
+function calcViewportPageSize(_config: AutoPageSizeConfig): number {
+  return window.innerWidth >= 768 ? 40 : 20;
 }
 
 /** 解析 autoPageSize 配置 */
@@ -125,9 +116,15 @@ export function useInfiniteScroll<T>({
 
   // IntersectionObserver 哨兵
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // 持久化 observer 实例（避免频繁销毁重建）
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   const fetchFnRef = useRef(fetchFn);
   fetchFnRef.current = fetchFn;
+
+  // loadNextPage 引用，避免闭包陈旧问题
+  const loadNextPageRef = useRef<() => Promise<void>>(async () => {});
+
 
   // 缓存表名：autoPageSize 时包含 pageSize 后缀，避免跨视口缓存污染
   const cacheNameRef = useRef(name);
@@ -148,6 +145,49 @@ export function useInfiniteScroll<T>({
   userIdRef.current = userId;
 
   const uidDep = userId || null;
+
+  // ===== loadNextPage：使用 ref 确保所有闭包拿到最新引用 =====
+  const loadNextPage = useCallback(async () => {
+    if (loadingRef.current || !hasMoreRef.current) return;
+    loadingRef.current = true;
+    setIsLoadingMore(true);
+
+    const nextPage = pageRef.current + 1;
+    const ps = pageSizeRef.current;
+    const cacheName = cacheNameRef.current;
+    const currentUserId = userIdRef.current || null;
+
+    try {
+      const result = await fetchFnRef.current(nextPage, ps);
+
+      if (!Array.isArray(result?.data)) {
+        console.warn(`[useInfiniteScroll] ${name} 第 ${nextPage} 页格式异常`);
+        return;
+      }
+
+      const serverVer = await getServerVersion(name);
+      writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
+      setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
+
+      setItemsState((prev) => {
+        const merged = [...prev, ...result.data];
+        const stillMore = merged.length < result.total;
+        hasMoreRef.current = stillMore;
+        setHasMore(stillMore);
+        return merged;
+      });
+      setTotal(result.total);
+      pageRef.current = nextPage;
+    } catch {
+      // 加载失败，稍后重试
+    } finally {
+      loadingRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [name]);
+
+  // 始终保持 loadNextPageRef 指向最新的 loadNextPage
+  loadNextPageRef.current = loadNextPage;
 
   // ===== 初始化：缓存优先 + 后台同步 =====
   useEffect(() => {
@@ -229,11 +269,11 @@ export function useInfiniteScroll<T>({
       }
     };
 
-    // 延迟预加载，等状态更新、DOM 渲染后再加载
+    // 延迟预加载，等状态更新、DOM 渲染后再加载（通过 ref 获取最新 loadNextPage）
     const schedulePreload = () => {
       setTimeout(() => {
         if (!cancelled && hasMoreRef.current && !loadingRef.current) {
-          loadNextPage();
+          loadNextPageRef.current();
         }
       }, 100);
     };
@@ -242,25 +282,23 @@ export function useInfiniteScroll<T>({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, uidDep]);
 
   // ===== IntersectionObserver + 滚动兜底：触底加载 =====
+  // 创建 observer（只依赖 name，创建一次）
   useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    // 方案1：IntersectionObserver（主要触发机制）
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         if (entry.isIntersecting && hasMoreRef.current && !loadingRef.current) {
-          loadNextPage();
+          loadNextPageRef.current();
         }
       },
       { rootMargin: "400px" }
     );
 
-    observer.observe(sentinel);
+    observerRef.current = observer;
 
     // 方案2：滚动事件兜底（部分环境 IntersectionObserver 可能不触发）
     let throttling = false;
@@ -268,10 +306,12 @@ export function useInfiniteScroll<T>({
       if (throttling || !hasMoreRef.current || loadingRef.current) return;
       throttling = true;
       requestAnimationFrame(() => {
+        const sentinel = sentinelRef.current;
+        if (!sentinel) { throttling = false; return; }
         const rect = sentinel.getBoundingClientRect();
         // sentinel 距离视口底部 400px 以内 → 触发加载
         if (rect.top < window.innerHeight + 400) {
-          loadNextPage();
+          loadNextPageRef.current();
         }
         throttling = false;
       });
@@ -281,48 +321,21 @@ export function useInfiniteScroll<T>({
 
     return () => {
       observer.disconnect();
+      observerRef.current = null;
       window.removeEventListener("scroll", handleScroll);
     };
-  }, [items.length]); // items 变化时重新绑定（sentinel 位置可能变化）
+  }, [name]); // 只依赖 name，通过 ref 获取最新值
 
-  const loadNextPage = useCallback(async () => {
-    if (loadingRef.current || !hasMoreRef.current) return;
-    loadingRef.current = true;
-    setIsLoadingMore(true);
+  // 当 items 变化（sentinel 位置改变）时，重新 observe
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const observer = observerRef.current;
+    if (!sentinel || !observer) return;
 
-    const nextPage = pageRef.current + 1;
-    const ps = pageSizeRef.current;
-    const cacheName = cacheNameRef.current;
-    const currentUserId = userIdRef.current || null;
-
-    try {
-      const result = await fetchFnRef.current(nextPage, ps);
-
-      if (!Array.isArray(result?.data)) {
-        console.warn(`[useInfiniteScroll] ${name} 第 ${nextPage} 页格式异常`);
-        return;
-      }
-
-      const serverVer = await getServerVersion(name);
-      writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
-      setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
-
-      setItemsState((prev) => {
-        const merged = [...prev, ...result.data];
-        const stillMore = merged.length < result.total;
-        hasMoreRef.current = stillMore;
-        setHasMore(stillMore);
-        return merged;
-      });
-      setTotal(result.total);
-      pageRef.current = nextPage;
-    } catch {
-      // 加载失败，稍后重试
-    } finally {
-      loadingRef.current = false;
-      setIsLoadingMore(false);
-    }
-  }, [name]);
+    // reconnect：先 unobserve 再 observe，使 IntersectionObserver 重新计算位置
+    observer.unobserve(sentinel);
+    observer.observe(sentinel);
+  }, [items.length]);
 
   // ===== 手动更新（乐观 CRUD）=====
   const setItems = useCallback((updater: (prev: T[]) => T[]) => {
