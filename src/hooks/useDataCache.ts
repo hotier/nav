@@ -5,7 +5,7 @@
  *
  * 用法：
  *   const { data, loading, syncing, setData } = useDataCache([
- *     { name: "Link",    fetch: () => fetch("/api/links?includePrivate=true&pageSize=200").then(r => r.json()) },
+ *     { name: "Link",    fetch: () => fetch("/api/links?includePrivate=true&pageSize=20").then(r => r.json()) },
  *     { name: "Category",fetch: () => fetch("/api/categories").then(r => r.json()) },
  *   ]);
  *   const links      = data["Link"]     || [];
@@ -35,6 +35,12 @@ interface TableConfig {
   fetch: () => Promise<FetchResult>;
 }
 
+interface UseDataCacheOptions {
+  configs: TableConfig[];
+  /** 用户 ID，用于 localStorage 命名空间隔离，防切换账号残留缓存 */
+  userId?: string | null;
+}
+
 interface UseDataCacheReturn {
   /** 各表数据，按 name 索引 */
   data: Record<string, unknown[]>;
@@ -48,7 +54,9 @@ interface UseDataCacheReturn {
 
 // ==================== Hook 实现 ====================
 
-export function useDataCache(configs: TableConfig[]): UseDataCacheReturn {
+export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
+  const { configs, userId } = options;
+
   // 单次渲染中所有 setState 会被 React 18+ 自动批处理为一次重绘
   const [allData, setAllData] = useState<Record<string, unknown[]>>({});
   const [loading, setLoading] = useState(true);
@@ -58,8 +66,14 @@ export function useDataCache(configs: TableConfig[]): UseDataCacheReturn {
   const configsRef = useRef(configs);
   configsRef.current = configs;
 
+  // 存 userId 引用，供 effect 内部使用
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+
   // 标记是否有手动 setData 调用，防止后台同步覆盖用户操作
   const manualTablesRef = useRef(new Set<string>());
+
+  const uid = userId || null;
 
   // ===== 初始化：缓存优先 + 后台同步 =====
 
@@ -68,11 +82,12 @@ export function useDataCache(configs: TableConfig[]): UseDataCacheReturn {
 
     const init = async () => {
       const cfgs = configsRef.current;
+      const currentUserId = userIdRef.current || null;
 
       // 1. 同步读取所有表缓存，立即渲染
       const cached: Record<string, unknown[]> = {};
       for (const { name } of cfgs) {
-        const c = readPageCache(name, 1);
+        const c = readPageCache(name, 1, currentUserId);
         if (c && c.data.length > 0) {
           cached[name] = c.data;
         }
@@ -90,11 +105,11 @@ export function useDataCache(configs: TableConfig[]): UseDataCacheReturn {
             if (cancelled) return { name, data: cached[name] || [] };
 
             const serverVer = await getServerVersion(name);
-            const localVer = getLocalVersion(name);
+            const localVer = getLocalVersion(name, currentUserId);
 
             // 版本一致 → 用缓存
             if (localVer && localVer === serverVer) {
-              const c = readPageCache(name, 1);
+              const c = readPageCache(name, 1, currentUserId);
               return { name, data: c?.data || cached[name] || [] };
             }
 
@@ -104,18 +119,17 @@ export function useDataCache(configs: TableConfig[]): UseDataCacheReturn {
               if (cancelled) return { name, data: cached[name] || [] };
 
               // ✅ 验证返回数据：防止 malformed response（如 401 返回 { error: "..." }）
-              //    写入 undefined/null 会永久损坏缓存（readPageCache 返回 null）
               if (!Array.isArray(result?.data)) {
                 console.warn(`[useDataCache] ${name} fetch 返回格式异常，回退缓存`);
-                const c = readPageCache(name, 1);
+                const c = readPageCache(name, 1, currentUserId);
                 return { name, data: c?.data || cached[name] || [] };
               }
 
-              writePageCache(name, 1, result.data, result.total, serverVer || 1);
+              writePageCache(name, 1, result.data, result.total, serverVer || 1, currentUserId);
               return { name, data: result.data };
             } catch {
               // 拉取失败，回退到缓存
-              const c = readPageCache(name, 1);
+              const c = readPageCache(name, 1, currentUserId);
               return { name, data: c?.data || cached[name] || [] };
             }
           })
@@ -147,7 +161,7 @@ export function useDataCache(configs: TableConfig[]): UseDataCacheReturn {
     return () => {
       cancelled = true;
     };
-  }, []); // 只在挂载时触发一次
+  }, [uid]); // userId 变化时重新初始化缓存
 
   // ===== 手动更新数据（乐观 CRUD）=====
 

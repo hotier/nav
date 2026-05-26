@@ -39,9 +39,11 @@ interface UserItem {
 
 export default function UsersPage() {
   const { data: session, status } = useSession();
-  const { data: cacheData, loading, syncing: _syncing, setData } = useDataCache([
+  const uid = session?.user?.id;
+  const { data: cacheData, loading, syncing: _syncing, setData } = useDataCache({
+    configs: [
     { name: "User", fetch: () => fetch("/api/users").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
-  ]);
+  ], userId: uid });
   const users = (cacheData["User"] || []) as UserItem[];
   const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -268,22 +270,28 @@ export default function UsersPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        {user.image ? (
-                          <img
-                            src={proxyImageUrl(user.image)}
-                            alt=""
-                            className="h-9 w-9 rounded-full ring-2 ring-slate-100 dark:ring-slate-700 object-cover"
-                          />
-                        ) : (
-                          <div className={cn(
-                            "h-9 w-9 rounded-full flex items-center justify-center text-xs font-semibold",
-                            user.role === "admin"
-                              ? "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300"
-                              : "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300"
-                          )}>
-                            {initials}
-                          </div>
-                        )}
+                        <div className={cn(user.role === "admin" && "admin-avatar-ring")}>
+                          {user.image ? (
+                            <img
+                              src={proxyImageUrl(user.image)}
+                              alt=""
+                              className={cn(
+                                "h-9 w-9 rounded-full object-cover",
+                                user.role !== "admin" && "ring-2 ring-slate-100 dark:ring-slate-700"
+                              )}
+                            />
+                          ) : (
+                            <div className={cn(
+                              "h-9 w-9 rounded-full flex items-center justify-center text-xs font-semibold",
+                              user.role === "admin"
+                                ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white"
+                                : "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300"
+                            )}>
+                              {initials}
+                            </div>
+                          )}
+                          {user.role === "admin" && <span className="admin-avatar-badge">管</span>}
+                        </div>
                         <div>
                           <span className="font-medium text-sm text-slate-800 dark:text-white">
                             {user.name || "未设置"}

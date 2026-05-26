@@ -16,10 +16,10 @@ export async function GET(request: NextRequest) {
     const links = await prisma.link.findMany({
       where: {
         AND: [
-          // 可见性：登录后看自己的全部 + 别人公开；未登录只看公开
+          // 可见性：登录后看自己的全部 + 别人公开（且所属分类也公开）；未登录只看公开+分类公开
           userId
-            ? { OR: [{ userId }, { isPrivate: false }] }
-            : { isPrivate: false },
+            ? { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] }
+            : { isPrivate: false, category: { isPublic: true } },
           // 文本搜索
           {
             OR: [

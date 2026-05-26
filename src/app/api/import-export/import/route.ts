@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { invalidateAll, incrementTableVersion } from "@/lib/queries";
+import { recognizeUrl, cleanUrl } from "@/lib/recognize-url";
 import { z } from "zod";
 
 const importSchema = z.object({
@@ -24,7 +25,7 @@ function parseNetscapeBookmarks(html: string): BookmarkLink[] {
   let match;
 
   while ((match = regex.exec(html)) !== null) {
-    const url = match[1];
+    const url = cleanUrl(match[1]);
     const title = decodeHtmlEntities(match[2].trim());
 
     if (url && title && !url.startsWith("javascript:")) {
@@ -41,7 +42,7 @@ function extractLinksFromJson(parsed: unknown): BookmarkLink[] {
   if (Array.isArray(parsed)) {
     return parsed.map((item: Record<string, unknown>) => ({
       title: String(item.title || item.name || "Untitled"),
-      url: String(item.url || item.link || ""),
+      url: cleanUrl(String(item.url || item.link || "")),
       description: String(item.description || item.desc || ""),
     })).filter((item) => item.url);
   }
@@ -53,7 +54,7 @@ function extractLinksFromJson(parsed: unknown): BookmarkLink[] {
     if (Array.isArray(obj.links)) {
       return (obj.links as Array<Record<string, unknown>>).map((item) => ({
         title: String(item.title || item.name || "Untitled"),
-        url: String(item.url || ""),
+        url: cleanUrl(String(item.url || "")),
         description: String(item.description || ""),
       })).filter((item) => item.url);
     }
@@ -77,6 +78,49 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, "\"")
     .replace(/&#39;/g, "'");
+}
+
+/**
+ * 导入后异步抓取元数据：对缺失 description/favicon 的链接逐个调用 recognizeUrl。
+ * 限并发 3，失败不留痕迹。
+ */
+async function fetchMetadataForImported(userId: string, categoryId: string, count: number) {
+  // 取回刚创建的链接（按 createdAt 倒序取最新 count 条）
+  const newLinks = await prisma.link.findMany({
+    where: { userId, categoryId },
+    orderBy: { createdAt: "desc" },
+    take: count,
+    select: { id: true, url: true, title: true, description: true, favicon: true },
+  });
+
+  // 筛选出需要抓取的链接（描述或 favicon 缺失）
+  const pending = newLinks.filter(
+    (l) => !l.description || !l.favicon
+  );
+
+  if (pending.length === 0) return;
+
+  const concurrency = 3;
+  for (let i = 0; i < pending.length; i += concurrency) {
+    const batch = pending.slice(i, i + concurrency);
+    await Promise.allSettled(
+      batch.map(async (link) => {
+        const meta = await recognizeUrl(link.url);
+        if (!meta.title) return; // 抓取失败
+
+        const updates: Record<string, string> = {};
+        if (!link.description && meta.description) updates.description = meta.description;
+        if (!link.favicon && meta.favicon) updates.favicon = meta.favicon;
+
+        if (Object.keys(updates).length > 0) {
+          await prisma.link.update({
+            where: { id: link.id },
+            data: updates,
+          }).catch(() => {}); // 单条更新失败不影响其他
+        }
+      })
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -129,12 +173,26 @@ export async function POST(request: Request) {
           data: {
             name: "默认分类",
             sortOrder: 0,
+            isPublic: true,
           },
         });
         targetCategoryId = newCategory.id;
       } else {
         targetCategoryId = defaultCategory.id;
       }
+    }
+
+    // 验证目标分类是否允许写入
+    const targetCat = await prisma.category.findUnique({
+      where: { id: targetCategoryId },
+      select: { id: true, isPublic: true, userId: true },
+    });
+    if (!targetCat) {
+      return NextResponse.json({ error: "分类不存在" }, { status: 404 });
+    }
+    const userRole = (session.user as { role?: string }).role;
+    if (userRole !== "admin" && !targetCat.isPublic && targetCat.userId !== session.user.id) {
+      return NextResponse.json({ error: "无权向此分类导入链接" }, { status: 403 });
     }
 
     const existingLinks = await prisma.link.findMany({
@@ -163,7 +221,7 @@ export async function POST(request: Request) {
     const createdLinks = await prisma.link.createMany({
       data: newLinks.map((link, index) => ({
         title: link.title,
-        url: link.url,
+        url: cleanUrl(link.url),
         description: link.description,
         categoryId: targetCategoryId!,
         userId: session.user.id,
@@ -171,10 +229,14 @@ export async function POST(request: Request) {
       })),
     });
 
-    // 导入完成后清除所有缓存，确保分类和链接列表都能获取到最新数据
+    // 导入完成后清除所有缓存
     invalidateAll();
     incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
     incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
+
+    // 异步抓取元数据（标题、描述、favicon），不阻塞响应
+    fetchMetadataForImported(session.user.id, targetCategoryId!, createdLinks.count)
+      .catch((e) => console.warn("[import] 元数据抓取失败:", e));
 
     return NextResponse.json({
       imported: createdLinks.count,

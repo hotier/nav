@@ -2,8 +2,9 @@
 
 import { LinksGrid } from "@/components/LinksGrid";
 import { useDataCache } from "@/hooks/useDataCache";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import type { Link as LinkType, Category } from "@/types";
-import { Home } from "lucide-react";
+import { Home, Loader2 } from "lucide-react";
 
 interface Props {
   linkCount: number;
@@ -11,14 +12,7 @@ interface Props {
 }
 
 export function HomeContentClient({ linkCount, isAdmin }: Props) {
-  const { data, loading } = useDataCache([
-    {
-      name: "Link",
-      fetch: () =>
-        fetch("/api/links?includePrivate=true&pageSize=200")
-          .then((r) => r.json())
-          .then((d: { data: LinkType[]; total: number }) => d),
-    },
+  const { data: catData, loading: catLoading } = useDataCache({ configs: [
     {
       name: "Category",
       fetch: () =>
@@ -26,35 +20,29 @@ export function HomeContentClient({ linkCount, isAdmin }: Props) {
           .then((r) => r.json())
           .then((d: Category[]) => ({ data: d, total: d.length })),
     },
-  ]);
+  ] });
 
-  const links = (data["Link"] || []) as LinkType[];
-  const categories = (data["Category"] || []) as Category[];
-  const displayCount = linkCount || links.length;
+  const { items: links, total, hasMore, isLoadingMore, loading: linksLoading, sentinelRef } = useInfiniteScroll<LinkType>({
+    name: "Link",
+    autoPageSize: { cardHeight: 140, columns: () => {
+      const w = window.innerWidth;
+      if (w >= 1536) return 5;  // 2xl
+      if (w >= 1280) return 4;  // xl
+      if (w >= 1024) return 3;  // lg
+      if (w >= 640) return 2;   // sm
+      return 1;
+    }},
+    fetchFn: (page, pageSize) =>
+      fetch(`/api/links?includePrivate=true&page=${page}&pageSize=${pageSize}&sort=recent`)
+        .then((r) => r.json())
+        .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
+  });
 
-  // 缓存命中 → 直接展示
-  if (links.length > 0) {
-    return (
-      <>
-        <div className="mb-6">
-          <div className="flex items-center gap-2.5">
-            <Home className="h-6 w-6 text-slate-800 dark:text-white" />
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
-              style={{ fontFamily: "var(--font-space-grotesk)" }}>
-              全部书签
-              <span className="ml-1.5 text-sm font-normal text-slate-400 dark:text-slate-500">
-                ({displayCount})
-              </span>
-            </h2>
-          </div>
-        </div>
-        <LinksGrid links={links} categories={categories} isAdmin={isAdmin} />
-      </>
-    );
-  }
+  const categories = (catData["Category"] || []) as Category[];
+  const displayCount = linkCount || total || links.length;
 
   // 加载中 → 骨架
-  if (loading) {
+  if (linksLoading && links.length === 0) {
     return (
       <>
         <div className="mb-6">
@@ -63,9 +51,6 @@ export function HomeContentClient({ linkCount, isAdmin }: Props) {
             <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
               style={{ fontFamily: "var(--font-space-grotesk)" }}>
               全部书签
-              <span className="ml-1.5 text-sm font-normal text-slate-400 dark:text-slate-500">
-                ({displayCount})
-              </span>
             </h2>
           </div>
         </div>
@@ -88,6 +73,34 @@ export function HomeContentClient({ linkCount, isAdmin }: Props) {
   }
 
   // 数据为空
+  if (!linksLoading && links.length === 0) {
+    return (
+      <>
+        <div className="mb-6">
+          <div className="flex items-center gap-2.5">
+            <Home className="h-6 w-6 text-slate-800 dark:text-white" />
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
+              style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              全部书签
+            </h2>
+          </div>
+        </div>
+        <div className="max-w-md mx-auto text-center py-16">
+          <div className="text-5xl mb-4">📭</div>
+          <p className="text-slate-600 dark:text-slate-300 mb-2">还没有书签</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mb-4">登录后可以添加和管理书签</p>
+          <a
+            href="/login"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/25"
+          >
+            前往登录 →
+          </a>
+        </div>
+      </>
+    );
+  }
+
+  // 有数据 → 展示
   return (
     <>
       <div className="mb-6">
@@ -102,16 +115,12 @@ export function HomeContentClient({ linkCount, isAdmin }: Props) {
           </h2>
         </div>
       </div>
-      <div className="max-w-md mx-auto text-center py-16">
-        <div className="text-5xl mb-4">📭</div>
-        <p className="text-slate-600 dark:text-slate-300 mb-2">还没有书签</p>
-        <p className="text-sm text-slate-400 dark:text-slate-500 mb-4">登录后可以添加和管理书签</p>
-        <a
-          href="/login"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/25"
-        >
-          前往登录 →
-        </a>
+      <LinksGrid links={links} categories={categories} isAdmin={isAdmin} />
+      {/* 无限滚动哨兵 */}
+      <div ref={sentinelRef} className="flex justify-center py-6">
+        {isLoadingMore && (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        )}
       </div>
     </>
   );

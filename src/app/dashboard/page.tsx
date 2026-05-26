@@ -19,8 +19,10 @@ const EMPTY: DashboardStats = { totalLinks: 0, totalCategories: 0, publicLinks: 
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
+  const uid = session?.user?.id;
 
-  const { data: cacheData, loading } = useDataCache([
+  const { data: cacheData, loading } = useDataCache({
+    configs: [
     {
       name: "DashboardStats",
       fetch: () =>
@@ -28,7 +30,7 @@ export default function DashboardPage() {
           .then((r) => r.json())
           .then((d: DashboardStats) => ({ data: [d], total: 1 })),
     },
-  ]);
+  ], userId: uid });
 
   const stats: DashboardStats = (cacheData["DashboardStats"]?.[0] as DashboardStats) || EMPTY;
 

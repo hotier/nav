@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateLinkSchema } from "@/lib/validators";
 import { invalidateLinks, invalidateLinksWithOldCategory, incrementTableVersion } from "@/lib/queries";
+import { canAddLinkToCategory } from "@/lib/permissions";
+import { cleanUrl } from "@/lib/recognize-url";
 
 export async function GET(
   request: Request,
@@ -15,11 +17,17 @@ export async function GET(
     }
 
     const { id } = await params;
+    const role = (session.user as { role?: string }).role;
+    const isAdmin = role === "admin";
 
     const link = await prisma.link.findFirst({
       where: {
         id,
-        userId: session.user.id,
+        OR: [
+          { userId: session.user.id },
+          // 管理员可查看其他用户的公开链接（前提：分类也公开）
+          ...(isAdmin ? [{ isPrivate: false, category: { isPublic: true } }] : []),
+        ],
       },
       include: {
         category: true,
@@ -61,12 +69,43 @@ export async function PUT(
       );
     }
 
-    const existing = await prisma.link.findFirst({
-      where: { id, userId: session.user.id },
+    const role = (session.user as { role?: string }).role;
+    const isAdmin = role === "admin";
+
+    // 查询链接（含分类信息），不限制 userId，后续手动做权限检查
+    const existing = await prisma.link.findUnique({
+      where: { id },
+      include: { category: { select: { id: true, name: true, icon: true, isPublic: true } } },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "链接不存在" }, { status: 404 });
+    }
+
+    // 权限检查：属主可以编辑；管理员可以编辑「公开分类下的公开链接」
+    const isOwner = existing.userId === session.user.id;
+    const isPublicLinkInPublicCat = existing.isPrivate === false && existing.category.isPublic;
+    if (!isOwner && !(isAdmin && isPublicLinkInPublicCat)) {
+      return NextResponse.json({ error: "无权操作此链接" }, { status: 403 });
+    }
+
+    // 管理员编辑他人公开链接时：禁止改为私有或移入私有分类（防止旁路）
+    if (!isOwner && isAdmin) {
+      if (result.data.isPrivate === true) {
+        return NextResponse.json({ error: "无权将该链接设为私有" }, { status: 403 });
+      }
+      if (result.data.categoryId && result.data.categoryId !== existing.categoryId) {
+        const targetCat = await prisma.category.findUnique({
+          where: { id: result.data.categoryId },
+          select: { isPublic: true },
+        });
+        if (!targetCat) {
+          return NextResponse.json({ error: "目标分类不存在" }, { status: 404 });
+        }
+        if (!targetCat.isPublic) {
+          return NextResponse.json({ error: "无权将该链接移入私有分类" }, { status: 403 });
+        }
+      }
     }
 
     if (result.data.categoryId) {
@@ -74,17 +113,28 @@ export async function PUT(
         where: {
           id: result.data.categoryId,
         },
+        select: { id: true, userId: true, isPublic: true },
       });
       if (!category) {
         return NextResponse.json({ error: "分类不存在" }, { status: 404 });
       }
+      // 检查用户是否有权向目标分类添加链接
+      const permCheck = canAddLinkToCategory(session, category);
+      if (permCheck) return permCheck;
+    }
+
+    // 清理 URL 并应用于更新数据
+    if (result.data.url) {
+      result.data.url = cleanUrl(result.data.url);
     }
 
     // 更新 URL 时，同一用户内不得与其他链接重复（排除自身）
+    // 对于属主，按属主 userId 查重；对于管理员编辑他人链接，按原属主 userId 查重
     if (result.data.url) {
+      const ownerId = existing.userId; // 始终按原属主查重
       const urlConflict = await prisma.link.findFirst({
         where: {
-          userId: session.user.id,
+          userId: ownerId,
           url: { equals: result.data.url, mode: "insensitive" },
           NOT: { id },
         },
@@ -113,8 +163,17 @@ export async function PUT(
         existing.categoryId,
         result.data.categoryId
       );
+      // 管理员编辑他人链接时，额外清除管理员自身的缓存
+      if (!isOwner) {
+        invalidateLinks(session.user.id, existing.categoryId);
+        invalidateLinks(session.user.id, result.data.categoryId);
+      }
     } else {
       invalidateLinks(existing.userId, existing.categoryId);
+      // 管理员编辑他人链接时，额外清除管理员自身的缓存
+      if (!isOwner) {
+        invalidateLinks(session.user.id, existing.categoryId);
+      }
     }
     incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
 
@@ -139,13 +198,24 @@ export async function DELETE(
     }
 
     const { id } = await params;
+    const role = (session.user as { role?: string }).role;
+    const isAdmin = role === "admin";
 
-    const existing = await prisma.link.findFirst({
-      where: { id, userId: session.user.id },
+    // 查询链接（含分类信息），不限制 userId，后续手动做权限检查
+    const existing = await prisma.link.findUnique({
+      where: { id },
+      select: { id: true, userId: true, isPrivate: true, categoryId: true, category: { select: { isPublic: true } } },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "链接不存在" }, { status: 404 });
+    }
+
+    // 权限检查：属主可以删除；管理员可以删除「公开分类下的公开链接」
+    const isOwner = existing.userId === session.user.id;
+    const isPublicLinkInPublicCat = existing.isPrivate === false && existing.category.isPublic;
+    if (!isOwner && !(isAdmin && isPublicLinkInPublicCat)) {
+      return NextResponse.json({ error: "无权操作此链接" }, { status: 403 });
     }
 
     await prisma.link.delete({
@@ -153,6 +223,10 @@ export async function DELETE(
     });
 
     invalidateLinks(existing.userId, existing.categoryId);
+    // 管理员删除他人链接时，额外清除管理员自身的缓存（mgmt 视图 + stats）
+    if (!isOwner) {
+      invalidateLinks(session.user.id, existing.categoryId);
+    }
     incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
 
     return NextResponse.json({ success: true });

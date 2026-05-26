@@ -10,9 +10,15 @@ import { swr, invalidateByPrefix, deleteCached } from "@/lib/cache";
 
 // ===================== 分类查询 =====================
 
-export const getCategories = cache(async () => {
-  return swr("categories", () =>
-    prisma.category.findMany({
+export const getCategories = cache(async (userId?: string) => {
+  const cacheKey = `categories:${userId || "anon"}`;
+  return swr(cacheKey, () => {
+    // 与 buildCategoryWhere 对齐：登录用户看公开+自己的，未登录只看公开
+    const where: Record<string, unknown> = userId
+      ? { OR: [{ isPublic: true }, { userId }] }
+      : { isPublic: true };
+    return prisma.category.findMany({
+      where,
       include: {
         _count: { select: { links: true } },
         children: {
@@ -20,7 +26,8 @@ export const getCategories = cache(async () => {
         },
       },
       orderBy: { sortOrder: "asc" },
-    }),
+    });
+  },
   5 * 60_000 // TTL 5min — 分类结构变动频率极低
   );
 });
@@ -32,11 +39,12 @@ export const getAllLinks = cache(async (userId?: string) => {
   return swr(cacheKey, () => {
     const where: Record<string, unknown> = {};
     if (userId) {
-      // 登录后：自己的全部链接 + 别人公开的链接
-      where.OR = [{ userId }, { isPrivate: false }];
+      // 登录后：自己的全部链接 + 别人公开的链接（且所属分类也公开）
+      where.OR = [{ userId }, { isPrivate: false, category: { isPublic: true } }];
     } else {
-      // 未登录：只看公开链接
+      // 未登录：只看公开链接，且所属分类也是公开的
       where.isPrivate = false;
+      where.category = { isPublic: true };
     }
     return prisma.link.findMany({
       where,
@@ -52,10 +60,10 @@ export async function searchLinks(query: string, userId?: string) {
   const results = await prisma.link.findMany({
     where: {
       AND: [
-        // 可见性：登录后看自己的全部 + 别人公开；未登录只看公开
+        // 可见性：登录后看自己的全部 + 别人公开（且所属分类也公开）；未登录只看公开+分类公开
         userId
-          ? { OR: [{ userId }, { isPrivate: false }] }
-          : { isPrivate: false },
+          ? { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] }
+          : { isPrivate: false, category: { isPublic: true } },
         // 文本搜索
         {
           OR: [
@@ -117,26 +125,31 @@ export function invalidateLinks(userId?: string, categoryId?: string): void {
       // 1. 该分类的链接列表（含当前用户 + 匿名）
       keys.push(`links:cat:${categoryId}:${userId}`);
       keys.push(`links:cat:${categoryId}:anon`);
-      // 2. 精确清除 API 缓存中与该分类相关的 key（含 :p${page} 后缀）
-      invalidateByPrefix(`links:api:${userId}:${categoryId}:`);
-      invalidateByPrefix(`links:api:${userId}:all:`);
-      // 3. 公开链接变更也会影响匿名用户的 API 缓存
-      invalidateByPrefix(`links:api:anon:${categoryId}:`);
-      invalidateByPrefix(`links:api:anon:all:`);
+      // 2. 精确清除当前用户的管理后台/首页 API 缓存
+      invalidateByPrefix(`links:api:mgmt:${userId}:${categoryId}:`);
+      invalidateByPrefix(`links:api:mgmt:${userId}:all:`);
+      invalidateByPrefix(`links:api:pub:${userId}:${categoryId}:`);
+      invalidateByPrefix(`links:api:pub:${userId}:all:`);
+      // 3. 链接可见性变更会影响所有能看到的用户 → 清空该分类下所有公开视图缓存
+      invalidateByPrefix(`links:api:pub:anon:${categoryId}:`);
+      invalidateByPrefix(`links:api:pub:anon:all:`);
+      // 其他登录用户的 pub 缓存也一并清除（无法枚举用户，用全量 pub 清理兜底）
+      invalidateByPrefix(`links:api:pub:`);
     } else {
       // ====== 批量操作兜底 ======
       // 没有分类信息时，只能清除该用户所有分类 + 所有 API 缓存
       invalidateByPrefix(`links:cat:`);
-      invalidateByPrefix(`links:api:${userId}`);
-      invalidateByPrefix(`links:api:anon`);
+      invalidateByPrefix(`links:api:mgmt:${userId}`);
+      invalidateByPrefix(`links:api:pub:${userId}`);
+      invalidateByPrefix(`links:api:pub:anon`);
     }
   } else if (categoryId) {
     // 无用户但有分类（罕见，兜底用 prefix）
     invalidateByPrefix(`links:cat:${categoryId}`);
-    invalidateByPrefix(`links:api:anon:${categoryId}`);
+    invalidateByPrefix(`links:api:pub:anon:${categoryId}`);
   } else {
     // 无用户无分类（如初始状态），清除所有匿名缓存
-    invalidateByPrefix(`links:api:anon`);
+    invalidateByPrefix(`links:api:pub:anon`);
   }
 
   // 匿名用户全量链接列表
@@ -175,28 +188,47 @@ export function invalidateUsers(): void {
  * 与本地缓存版本比对，不一致则重新拉取数据实现跨端同步。
  */
 export async function incrementTableVersion(table: string): Promise<number> {
-  const key = `version:${table}`;
+  const keys = [table];
 
-  // 确保行存在
-  await prisma.appSetting.upsert({
-    where: { key },
-    create: { key, value: "0" },
-    update: {},
-  });
+  // "Link" 变更时需要同步递增 "Link:mgmt"（仪表盘管理后台缓存），避免缓存污染
+  if (table === "Link") keys.push("Link:mgmt");
 
-  // 原子递增
-  await prisma.$executeRaw`
-    UPDATE "AppSetting"
-    SET "value" = (COALESCE("value"::int, 0) + 1)::text
-    WHERE "key" = ${key}
-  `;
+  // "Category" 变更时同步递增 "Category:mgmt"（仪表盘分类管理缓存）
+  if (table === "Category") keys.push("Category:mgmt");
 
-  // 读取新值
-  const setting = await prisma.appSetting.findUnique({ where: { key } });
-  const newVersion = parseInt(setting?.value || "0", 10);
+  // 链接/分类/用户变更 → 联动递增 DashboardStats 版本
+  // 服务端 SWR 缓存的清除由 invalidateLinks / invalidateCategories 各自携带 userId 精确处理
+  if (table === "Link" || table === "Category" || table === "User") {
+    keys.push("DashboardStats");
+  }
 
-  // 清除 cache-version API 的 SWR 缓存，确保下一次请求拿到最新版本号
-  deleteCached(`cache-version:${table}`);
+  let latestVersion = 0;
 
-  return newVersion;
+  for (const t of keys) {
+    const key = `version:${t}`;
+
+    // 确保行存在
+    await prisma.appSetting.upsert({
+      where: { key },
+      create: { key, value: "0" },
+      update: {},
+    });
+
+    // 原子递增
+    await prisma.$executeRaw`
+      UPDATE "AppSetting"
+      SET "value" = (COALESCE("value"::int, 0) + 1)::text
+      WHERE "key" = ${key}
+    `;
+
+    // 读取新值
+    const setting = await prisma.appSetting.findUnique({ where: { key } });
+    const newVersion = parseInt(setting?.value || "0", 10);
+    latestVersion = newVersion;
+
+    // 清除 cache-version API 的 SWR 缓存，确保下一次请求拿到最新版本号
+    deleteCached(`cache-version:${t}`);
+  }
+
+  return latestVersion;
 }

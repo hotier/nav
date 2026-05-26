@@ -22,6 +22,8 @@ export interface Category {
   name: string;
   icon: string | null;
   parentId: string | null;
+  isPublic: boolean;
+  userId: string | null;
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;

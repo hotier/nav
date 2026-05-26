@@ -1,17 +1,20 @@
 "use client";
 
-import React, { useState, useMemo, Fragment } from "react";
+import React, { useState, useMemo, useRef, useEffect, Fragment } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
-import { Plus, Trash2, Edit, Folder, FolderOpen } from "lucide-react";
+import { Plus, Trash2, Edit, Folder, FolderOpen, Loader2, Globe, EyeOff, ChevronDown, Check, AlertTriangle } from "lucide-react";
 import { DynamicIcon } from "@/components/DynamicIcon";
 import { AdminLayout } from "@/components/AdminLayout";
 import { IconPicker } from "@/components/IconPicker";
-import { CategoryLinkManager } from "@/components/CategoryLinkManager";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -32,9 +35,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
 import toast from "react-hot-toast";
+import { cn } from "@/lib/utils";
 import type { Category, Link as LinkType } from "@/types";
 import { useDataCache } from "@/hooks/useDataCache";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 
 const LINK_PREVIEW_COUNT = 2;
 
@@ -44,14 +50,34 @@ function CategoryIcon({ icon, className }: { icon?: string | null; className?: s
 
 export default function CategoriesPage() {
   const { data: session } = useSession();
+  const uid = session?.user?.id;
+  const isAdmin = (session?.user as { role?: string })?.role === "admin";
 
-  const { data: cacheData, loading: _loading, syncing: _syncing, setData } = useDataCache([
-    { name: "Category", fetch: () => fetch("/api/categories").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
-    { name: "Link", fetch: () => fetch("/api/links?includePrivate=true&pageSize=200").then(r => r.json()).then(d => ({ data: d.data, total: d.total })) },
-  ]);
+  // 判断当前用户是否可以管理此分类（编辑/删除）
+  const canManage = (category: Category) => {
+    if (isAdmin) return true;
+    // 普通用户只能管理自己创建的非公开分类
+    return !category.isPublic && category.userId === uid;
+  };
 
-  const categories = (cacheData["Category"] || []) as Category[];
-  const allLinks = (cacheData["Link"] || []) as LinkType[];
+  // Category 数据
+  const { data: cacheData, loading: _loading, syncing: _syncing, setData } = useDataCache({
+    configs: [
+    { name: "Category:mgmt", fetch: () => fetch("/api/categories?scope=manage").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
+  ], userId: uid });
+
+  // Link 数据 — 无限滚动加载
+  const { items: allLinks, hasMore, isLoadingMore, sentinelRef, setItems: setLinkData } = useInfiniteScroll<LinkType>({
+    name: "Link:mgmt",
+    autoPageSize: true,
+    userId: uid,
+    fetchFn: (page, pageSize) =>
+      fetch(`/api/links?includePrivate=true&page=${page}&pageSize=${pageSize}&scope=manage`)
+        .then(r => r.json())
+        .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
+  });
+
+  const categories = (cacheData["Category:mgmt"] || []) as Category[];
 
   const categoryLinks = useMemo(() => {
     const grouped: Record<string, LinkType[]> = {};
@@ -72,32 +98,106 @@ export default function CategoriesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
-  // 编辑时待提交的链接选择
-  const [pendingLinkIds, setPendingLinkIds] = useState<string[]>([]);
+  // 删除确认
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // 编辑时移动所有链接到目标分类
+  const [moveTargetCategoryId, setMoveTargetCategoryId] = useState<string>("");
 
   const [formData, setFormData] = useState({
     name: "",
     parentId: "",
     icon: "",
+    isPublic: false,
   });
+
+  // 可见性筛选
+  const [visibilityFilter, setVisibilityFilter] = useState<"all" | "public" | "private">("all");
+  const [visMenuOpen, setVisMenuOpen] = useState(false);
+  const visBtnRef = useRef<HTMLButtonElement>(null);
+  const visMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!visMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (visMenuRef.current && !visMenuRef.current.contains(e.target as Node)) {
+        setVisMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [visMenuOpen]);
+
+  // 逐行可见性切换
+  const [catVisibilityId, setCatVisibilityId] = useState<string | null>(null);
+  const catVisMenuRef = useRef<HTMLDivElement>(null);
+  const [categoryUpdating, setCategoryUpdating] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!catVisibilityId) return;
+    const handler = (e: MouseEvent) => {
+      if (catVisMenuRef.current && !catVisMenuRef.current.contains(e.target as Node)) {
+        setCatVisibilityId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [catVisibilityId]);
+
+  const handleSetVisibility = async (categoryId: string, targetPublic: boolean) => {
+    setCatVisibilityId(null);
+    const prevCategories = [...categories];
+    // 乐观更新
+    setData("Category:mgmt", (prev) =>
+      (prev as Category[]).map((c) =>
+        c.id === categoryId ? { ...c, isPublic: targetPublic } : c
+      )
+    );
+    setCategoryUpdating((prev) => ({ ...prev, [categoryId]: true }));
+    try {
+      const res = await fetch(`/api/categories/${categoryId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: targetPublic }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setData("Category:mgmt", (prev) =>
+          (prev as Category[]).map((c) =>
+            c.id === categoryId ? { ...c, isPublic: updated.isPublic } : c
+          )
+        );
+        toast.success(updated.isPublic ? "已设为公开" : "已设为私有");
+        refreshLinks();
+      } else {
+        setData("Category:mgmt", () => prevCategories);
+        const err = await res.json();
+        toast.error(err.error || "操作失败");
+      }
+    } catch {
+      setData("Category:mgmt", () => prevCategories);
+      toast.error("操作失败");
+    } finally {
+      setCategoryUpdating((prev) => ({ ...prev, [categoryId]: false }));
+    }
+  };
 
   // CRUD 后手动刷新数据
   const refreshCategories = async () => {
     try {
-      const res = await fetch("/api/categories");
+      const res = await fetch("/api/categories?scope=manage");
       if (res.ok) {
         const data = await res.json();
-        setData("Category", () => data);
+        setData("Category:mgmt", () => data);
       }
     } catch { /* silent */ }
   };
 
   const refreshLinks = async () => {
     try {
-      const res = await fetch("/api/links?includePrivate=true&pageSize=200");
+      const res = await fetch("/api/links?includePrivate=true&page=1&pageSize=100");
       if (res.ok) {
         const { data: all } = await res.json();
-        setData("Link", () => all);
+        setLinkData(() => all);
       }
     } catch { /* silent */ }
   };
@@ -111,36 +211,23 @@ export default function CategoriesPage() {
 
     setIsSubmitting(true);
     try {
-      // 如果是编辑，先处理链接变更
-      if (editingCategory) {
-        const originalLinks = categoryLinks[editingCategory.id] || [];
-        const originalIds = new Set(originalLinks.map((l) => l.id));
-        const pendingIds = new Set(pendingLinkIds);
-
-        // 移除的链接 → 移到第一个其他分类
-        const removedIds = originalLinks
-          .filter((l) => !pendingIds.has(l.id))
-          .map((l) => l.id);
-        const fallbackCategory = categories.find((c) => c.id !== editingCategory.id);
-        for (const linkId of removedIds) {
-          if (fallbackCategory) {
-            await fetch(`/api/links/${linkId}`, {
+      // 如果是编辑，且选择了移动目标分类，则将当前分类下所有链接移走
+      if (editingCategory && moveTargetCategoryId && moveTargetCategoryId !== "_keep") {
+        const currentLinks = categoryLinks[editingCategory.id] || [];
+        const results = await Promise.allSettled(
+          currentLinks.map((link) =>
+            fetch(`/api/links/${link.id}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ categoryId: fallbackCategory.id }),
-            });
-          }
+              body: JSON.stringify({ categoryId: moveTargetCategoryId }),
+            })
+          )
+        );
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) {
+          toast.error(`${failed} 个链接移动失败`);
         }
 
-        // 新增的链接 → 移到当前分类
-        const addedIds = Array.from(pendingIds).filter((id) => !originalIds.has(id));
-        for (const linkId of addedIds) {
-          await fetch(`/api/links/${linkId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ categoryId: editingCategory.id }),
-          });
-        }
       }
 
       const url = editingCategory
@@ -155,6 +242,7 @@ export default function CategoriesPage() {
           name: formData.name,
           icon: formData.icon || null,
           parentId: formData.parentId || null,
+          isPublic: formData.isPublic,
         }),
       });
 
@@ -162,8 +250,8 @@ export default function CategoriesPage() {
         toast.success(editingCategory ? "分类已更新" : "分类已创建");
         setIsDialogOpen(false);
         setEditingCategory(null);
-        setFormData({ name: "", parentId: "", icon: "" });
-        setPendingLinkIds([]);
+        setFormData({ name: "", parentId: "", icon: "", isPublic: false });
+        setMoveTargetCategoryId("");
         await Promise.all([refreshCategories(), refreshLinks()]);
       } else {
         const error = await response.json();
@@ -176,15 +264,17 @@ export default function CategoriesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个分类吗？分类下的链接也会被删除。")) return;
-
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
     const prevCategories = [...categories];
-    // 乐观删除（策略4：先更新视图，页面瞬时响应）
-    setData("Category", (prev) => (prev as Category[]).filter((c) => c.id !== id));
+    const target = deleteTarget;
+    // 乐观删除
+    setData("Category:mgmt", (prev) => (prev as Category[]).filter((c) => c.id !== target.id));
+    setDeleteTarget(null);
 
     try {
-      const response = await fetch(`/api/categories/${id}`, {
+      const response = await fetch(`/api/categories/${target.id}`, {
         method: "DELETE",
       });
 
@@ -193,12 +283,15 @@ export default function CategoriesPage() {
         refreshLinks();
       } else {
         // 回滚
-        setData("Category", () => prevCategories);
-        toast.error("删除失败");
+        setData("Category:mgmt", () => prevCategories);
+        const err = await response.json();
+        toast.error(err.error || "删除失败");
       }
     } catch {
-      setData("Category", () => prevCategories);
+      setData("Category:mgmt", () => prevCategories);
       toast.error("删除失败");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -208,24 +301,23 @@ export default function CategoriesPage() {
       name: category.name,
       parentId: category.parentId || "",
       icon: category.icon || "",
+      isPublic: category.isPublic,
     });
-    // 初始化待提交链接列表为当前分类下的链接ID
-    const currentLinks = categoryLinks[category.id] || [];
-    setPendingLinkIds(currentLinks.map((l) => l.id));
+    setMoveTargetCategoryId("");
     setIsDialogOpen(true);
   };
 
   const openAddDialog = () => {
     setEditingCategory(null);
-    setFormData({ name: "", parentId: "", icon: "" });
-    setPendingLinkIds([]);
+    setFormData({ name: "", parentId: "", icon: "", isPublic: false });
+    setMoveTargetCategoryId("");
     setIsDialogOpen(true);
   };
 
   const rootCategories = categories.filter((c) => !c.parentId);
 
   const stats = {
-    totalLinks: categories.reduce((sum, c) => sum + (c._count?.links || 0), 0),
+    totalLinks: categories.reduce((sum, c) => sum + (c.links?.length || 0), 0),
     totalCategories: categories.length,
     publicLinks: 0,
     privateLinks: 0,
@@ -260,6 +352,7 @@ export default function CategoriesPage() {
 
   const renderCategoryRow = (category: Category, isChild = false) => {
     const links = categoryLinks[category.id] || [];
+    const manageable = canManage(category);
     return (
       <TableRow key={category.id}>
         <TableCell className={isChild ? "font-medium pl-8 overflow-hidden" : "font-medium overflow-hidden"}>
@@ -282,24 +375,102 @@ export default function CategoriesPage() {
         <TableCell className="text-center">
           <span className="text-sm font-medium">{links.length}</span>
         </TableCell>
+        <TableCell>
+          {isAdmin ? (
+            <div className="relative inline-block">
+              <button
+                onClick={() => {
+                  setCatVisibilityId(catVisibilityId === category.id ? null : category.id);
+                }}
+                disabled={categoryUpdating[category.id]}
+                className={cn(
+                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1",
+                  category.isPublic
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20 dark:hover:bg-emerald-500/20"
+                    : "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20 dark:hover:bg-amber-500/20"
+                )}
+              >
+                {categoryUpdating[category.id] ? (
+                  <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+                ) : category.isPublic ? (
+                  <Globe className="h-3 w-3 text-emerald-500" />
+                ) : (
+                  <EyeOff className="h-3 w-3 text-amber-500" />
+                )}
+                {category.isPublic ? "公开" : "私有"}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </button>
+              {catVisibilityId === category.id && (
+                <div
+                  ref={catVisMenuRef}
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                >
+                  {([
+                    { value: true, label: "公开", Icon: Globe, color: "text-emerald-500" },
+                    { value: false, label: "私有", Icon: EyeOff, color: "text-amber-500" },
+                  ] as const).map(({ value, label, Icon, color }) => (
+                    <button
+                      key={String(value)}
+                      onClick={() => handleSetVisibility(category.id, value)}
+                      disabled={categoryUpdating[category.id]}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                        category.isPublic === value ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                      )}
+                    >
+                      <Icon className={cn("h-3.5 w-3.5", color)} />
+                      <span className="flex-1 text-left">{label}</span>
+                      {category.isPublic === value && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className={cn(
+              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ring-1",
+              category.isPublic
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20"
+                : "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20"
+            )}>
+              {category.isPublic ? (
+                <>
+                  <Globe className="h-3 w-3 text-emerald-500" />
+                  公开
+                </>
+              ) : (
+                <>
+                  <EyeOff className="h-3 w-3 text-amber-500" />
+                  私有
+                </>
+              )}
+            </span>
+          )}
+        </TableCell>
         <TableCell className="text-right">
           <div className="flex items-center justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => openEditDialog(category)}
-            >
-              <Edit className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => handleDelete(category.id)}
-            >
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
+            {manageable ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => openEditDialog(category)}
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setDeleteTarget(category)}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground italic">只读</span>
+            )}
           </div>
         </TableCell>
       </TableRow>
@@ -374,7 +545,7 @@ export default function CategoriesPage() {
                       setFormData({ ...formData, parentId: value === "none" ? "" : value })
                     }
                   >
-                    <SelectTrigger className="mt-1">
+                    <SelectTrigger className="mt-1 w-full">
                       <SelectValue placeholder="无（顶级分类）" />
                     </SelectTrigger>
                     <SelectContent>
@@ -390,23 +561,61 @@ export default function CategoriesPage() {
                   </Select>
                 </div>
 
-                {/* 编辑时管理该分类下的链接 */}
+                {/* 公开/私有开关 */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="isPublic">公开分类</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      公开后所有用户可见，关闭后仅自己可见
+                    </p>
+                  </div>
+                  <Switch
+                    id="isPublic"
+                    checked={formData.isPublic}
+                    onCheckedChange={(checked) => {
+                      if (!isAdmin && checked) {
+                        toast.error("仅管理员可设置公开分类");
+                        return;
+                      }
+                      setFormData({ ...formData, isPublic: checked });
+                    }}
+                    disabled={!isAdmin && !formData.isPublic}
+                  />
+                </div>
+
+                {/* 编辑时，可选择将当前分类下所有链接移动到其他分类 */}
                 {editingCategory && (() => {
-                  const allLinksFlat = Object.values(categoryLinks).flat().map((l) => ({
-                    id: l.id,
-                    title: l.title,
-                    categoryId: l.categoryId,
-                    createdAt: l.createdAt,
-                  }));
+                  const linkCount = (categoryLinks[editingCategory.id] || []).length;
+                  if (linkCount === 0) return null;
+                  const otherCategories = categories.filter((c) => c.id !== editingCategory.id);
                   return (
                     <div>
-                      <Label className="mb-2 block">归属链接</Label>
-                      <CategoryLinkManager
-                        categoryId={editingCategory.id}
-                        allLinks={allLinksFlat}
-                        selectedIds={pendingLinkIds}
-                        onSelectionChange={setPendingLinkIds}
-                      />
+                      <Label className="mb-2 block">
+                        移动全部链接（{linkCount} 个）
+                      </Label>
+                      {otherCategories.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">没有其他分类可接收链接</p>
+                      ) : (
+                        <Select
+                          value={moveTargetCategoryId}
+                          onValueChange={setMoveTargetCategoryId}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="保持当前分类（不移动）" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_keep">保持当前分类（不移动）</SelectItem>
+                            {otherCategories.map((cat) => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        选择后将把该分类下的所有链接批量移动到目标分类
+                      </p>
                     </div>
                   );
                 })()}
@@ -443,21 +652,82 @@ export default function CategoriesPage() {
             </div>
           </div>
 
+          {/* Visibility Filter */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <button
+                ref={visBtnRef}
+                onClick={() => setVisMenuOpen((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+              >
+                {visibilityFilter === "all" ? (
+                  <Globe className="h-3.5 w-3.5 text-slate-400" />
+                ) : visibilityFilter === "public" ? (
+                  <Globe className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5 text-amber-500" />
+                )}
+                {visibilityFilter === "all" ? "全部可见性" : visibilityFilter === "public" ? "公开" : "私有"}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </button>
+              {visMenuOpen && createPortal(
+                <div
+                  ref={visMenuRef}
+                  style={{
+                    position: "fixed",
+                    top: (visBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                    left: (visBtnRef.current?.getBoundingClientRect().left ?? 0) + (visBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
+                    transform: "translateX(-50%)",
+                  }}
+                  className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                >
+                  {([
+                    { value: "all", label: "全部", Icon: Globe, color: "text-slate-400" },
+                    { value: "public", label: "公开", Icon: Globe, color: "text-emerald-500" },
+                    { value: "private", label: "私有", Icon: EyeOff, color: "text-amber-500" },
+                  ] as const).map(({ value, label, Icon, color }) => (
+                    <button
+                      key={value}
+                      onClick={() => {
+                        setVisibilityFilter(value);
+                        setVisMenuOpen(false);
+                      }}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                        visibilityFilter === value
+                          ? "text-slate-900 dark:text-white font-medium"
+                          : "text-slate-600 dark:text-slate-400"
+                      )}
+                    >
+                      <Icon className={cn("h-3.5 w-3.5", color)} />
+                      <span className="flex-1 text-left">{label}</span>
+                      {visibilityFilter === value && (
+                        <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>,
+                document.body
+              )}
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead style={{ width: "18%" }}>名称</TableHead>
-                  <TableHead style={{ width: "10%" }}>类型</TableHead>
-                  <TableHead style={{ width: "44%" }}>具体链接</TableHead>
-                  <TableHead style={{ width: "10%" }} className="text-center">数量</TableHead>
+                  <TableHead style={{ width: "16%" }}>名称</TableHead>
+                  <TableHead style={{ width: "8%" }}>类型</TableHead>
+                  <TableHead style={{ width: "38%" }}>具体链接</TableHead>
+                  <TableHead style={{ width: "8%" }} className="text-center">数量</TableHead>
+                  <TableHead style={{ width: "12%" }}>可见性</TableHead>
                   <TableHead style={{ width: "18%" }} className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rootCategories.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8">
+                    <TableCell colSpan={6} className="text-center py-8">
                       没有分类，创建一个开始吧
                     </TableCell>
                   </TableRow>
@@ -478,7 +748,59 @@ export default function CategoriesPage() {
           </div>
         </div>
         </div>
+
+        {/* 无限滚动哨兵 */}
+        <div ref={sentinelRef} className="flex justify-center py-6">
+          {isLoadingMore && (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          )}
+        </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              确认删除
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              <p>
+                确定要删除分类{" "}
+                <strong className="text-slate-800 dark:text-slate-200">
+                  {deleteTarget?.name}
+                </strong>
+                {" "}吗？
+              </p>
+              <p className="mt-2 text-red-500 dark:text-red-400 text-sm">
+                此操作不可撤销，该分类下的所有链接将被同时删除。
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={isDeleting}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1" />
+              )}
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

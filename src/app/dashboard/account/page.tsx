@@ -23,7 +23,8 @@ interface Profile {
 }
 
 export default function AccountPage() {
-  const { update } = useSession();
+  const { data: session, update } = useSession();
+  const uid = session?.user?.id;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -38,7 +39,7 @@ export default function AccountPage() {
 
   useEffect(() => {
     // 从缓存预加载，避免首次加载空白
-    const cached = readPageCache<Profile>("Profile", 1);
+    const cached = readPageCache<Profile>("Profile", 1, uid);
     if (cached && cached.data.length > 0) {
       const data = cached.data[0];
       setProfile(data);
@@ -58,7 +59,7 @@ export default function AccountPage() {
         setName(data.name || "");
         setEmail(data.email || "");
         setImage(data.image || "");
-        writePageCache("Profile", 1, [data], 1, 0);
+        writePageCache("Profile", 1, [data], 1, 0, uid);
       }
     } catch {
       toast.error("获取账户信息失败");

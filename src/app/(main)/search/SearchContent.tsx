@@ -15,7 +15,7 @@ export default function SearchContent() {
   const isAdmin = session?.user?.role === "admin";
 
   // 分类走统一缓存
-  const { data: cacheData } = useDataCache([
+  const { data: cacheData } = useDataCache({ configs: [
     {
       name: "Category",
       fetch: () =>
@@ -23,7 +23,7 @@ export default function SearchContent() {
           .then((r) => r.json())
           .then((d: Category[]) => ({ data: d, total: d.length })),
     },
-  ]);
+  ] });
   const categories = (cacheData["Category"] || []) as Category[];
 
   // 搜索结果（query 驱动，不走全局版本缓存）

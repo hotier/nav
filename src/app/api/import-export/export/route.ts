@@ -18,8 +18,16 @@ export async function GET(request: Request) {
       where.isPrivate = false;
     }
 
+    // 分类按权限过滤：管理员看全部，普通用户看公开 + 自己的
+    const userRole = (session.user as { role?: string }).role;
+    const catWhere: Record<string, unknown> = {};
+    if (userRole !== "admin") {
+      catWhere.OR = [{ isPublic: true }, { userId: session.user.id }];
+    }
+
     const [categories, links] = await Promise.all([
       prisma.category.findMany({
+        where: catWhere,
         include: { children: true },
         orderBy: { sortOrder: "asc" },
       }),

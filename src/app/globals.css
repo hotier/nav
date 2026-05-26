@@ -230,6 +230,73 @@ body {
   animation: float 8s ease-in-out infinite;
 }
 
+/* Admin avatar glow ring + badge */
+@property --ring-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes avatar-ring-spin {
+  to {
+    --ring-angle: 360deg;
+  }
+}
+
+.admin-avatar-ring {
+  position: relative;
+  display: inline-flex;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  background:
+    linear-gradient(transparent, transparent),
+    conic-gradient(from var(--ring-angle), #fff49a, #ffd700, #ff9800, #ffd700, #fff49a);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.5), 0 0 28px rgba(255, 175, 0, 0.25);
+  animation: avatar-ring-spin 3s linear infinite;
+}
+
+.admin-avatar-ring > button,
+.admin-avatar-ring > img,
+.admin-avatar-ring > div,
+.admin-avatar-ring > .avatar-inner {
+  border-radius: 50%;
+}
+
+@keyframes avatar-badge-pulse {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 215, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 16px rgba(255, 175, 0, 0.25);
+    border-color: rgba(255, 255, 255, 1);
+  }
+}
+
+.admin-avatar-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  background: linear-gradient(45deg, #ffd700, #ff9800);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  z-index: 10;
+  box-shadow: 0 0 4px rgba(255, 215, 0, 0.4);
+  line-height: 1;
+  pointer-events: none;
+  animation: avatar-badge-pulse 2s ease-in-out infinite;
+}
+
 @keyframes float {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50% { transform: translateY(-20px) rotate(5deg); }

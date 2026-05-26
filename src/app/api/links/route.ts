@@ -4,37 +4,43 @@ import { prisma } from "@/lib/prisma";
 import { createLinkSchema } from "@/lib/validators";
 import { invalidateLinks, incrementTableVersion } from "@/lib/queries";
 import { swr } from "@/lib/cache";
+import { buildLinkWhere, canAddLinkToCategory, cacheScope, type LinkViewScope } from "@/lib/permissions";
+import { cleanUrl } from "@/lib/recognize-url";
 
 export async function GET(request: Request) {
   try {
     const session = await auth();
     const userId = session?.user?.id;
+    const userRole = (session?.user as { role?: string } | undefined)?.role;
 
     const { searchParams } = new URL(request.url);
     const categoryId = searchParams.get("categoryId");
     const page = parseInt(searchParams.get("page") || "1", 10) || 1;
     const pageSize = parseInt(searchParams.get("pageSize") || "50", 10) || 50;
     const skip = (page - 1) * pageSize;
+    const scope: LinkViewScope = searchParams.get("scope") === "manage" ? "manage" : "home";
+    const sort = searchParams.get("sort") || "order"; // order | recent
 
-    const where: Record<string, unknown> = {};
+    // 权限中间件：根据用户身份和视图场景生成 where 条件
+    const permissionWhere = buildLinkWhere(scope, userId, userRole);
+
+    const where: Record<string, unknown> = { ...permissionWhere };
     if (categoryId) where.categoryId = categoryId;
 
-    if (userId) {
-      // 登录后：自己的全部链接 + 别人公开的链接
-      where.OR = [{ userId }, { isPrivate: false }];
-    } else {
-      // 未登录：只看公开链接
-      where.isPrivate = false;
-    }
+    // 排序规则：置顶始终优先，二序按 sort 参数切换
+    const orderBy: Record<string, string>[] = sort === "recent"
+      ? [{ isPinned: "desc" }, { createdAt: "asc" }]
+      : [{ isPinned: "desc" }, { sortOrder: "asc" }];
 
-    // SWR 缓存
+    // SWR 缓存 — 按 scope 区分缓存键
     const uid = userId || "anon";
-    const cacheKey = `links:api:${uid}:${categoryId || "all"}:p${page}`;
+    const scopeKey = cacheScope(scope);
+    const cacheKey = `links:api:${scopeKey}:${uid}:${categoryId || "all"}:p${page}:${sort}`;
     const links = await swr(cacheKey, () => {
       return prisma.link.findMany({
         where,
         include: { category: { select: { id: true, name: true, icon: true } } },
-        orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
+        orderBy,
         skip,
         take: pageSize,
       });
@@ -70,10 +76,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // 清理 URL：去首尾空白、去尾部反斜杠
+    result.data.url = cleanUrl(result.data.url);
+
     const category = await prisma.category.findFirst({
       where: {
         id: result.data.categoryId,
       },
+      select: { id: true, userId: true, isPublic: true },
     });
 
     if (!category) {
@@ -82,6 +92,10 @@ export async function POST(request: Request) {
         { status: 404 }
       );
     }
+
+    // 检查用户是否有权向此分类添加链接
+    const permCheck = canAddLinkToCategory(session, category);
+    if (permCheck) return permCheck;
 
     // 同一用户内 URL 不得重复
     const urlConflict = await prisma.link.findFirst({

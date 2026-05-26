@@ -47,6 +47,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   links         Link[]
+  categories    Category[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -70,6 +71,8 @@ model Category {
   name      String
   icon      String?
   parentId  String?
+  isPublic  Boolean  @default(false)
+  userId    String?
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,8 +80,10 @@ model Category {
   parent    Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
   children  Category[] @relation("CategoryToCategory")
   links     Link[]
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([parentId])
+  @@index([userId])
 }
 
 model Link {

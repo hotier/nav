@@ -12,11 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Globe, Lock } from "lucide-react";
 import toast from "react-hot-toast";
+import { cleanUrl } from "@/lib/recognize-url";
 
 interface Category {
   id: string;
   name: string;
+  isPublic: boolean;
 }
 
 interface LinkFormData {
@@ -66,9 +69,16 @@ export function LinkForm({
     isPinned: safeInitialData.isPinned || false,
   });
 
+  const handleUrlClean = () => {
+    setFormData((prev) => ({ ...prev, url: cleanUrl(prev.url) }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.url || !formData.categoryId) {
+    const cleanedUrl = cleanUrl(formData.url);
+    setFormData((prev) => ({ ...prev, url: cleanedUrl }));
+
+    if (!cleanedUrl || !formData.categoryId) {
       toast.error("请填写必填项");
       return;
     }
@@ -82,7 +92,7 @@ export function LinkForm({
         const response = await fetch("/api/links/recognize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: formData.url }),
+          body: JSON.stringify({ url: cleanedUrl }),
           signal: controller.signal,
         });
         clearTimeout(timer);
@@ -91,27 +101,31 @@ export function LinkForm({
           const data = await response.json();
           const finalData = {
             ...formData,
+            url: cleanedUrl,
             title: formData.title || data.title || "",
             description: formData.description || data.description || "",
             favicon: formData.favicon || data.favicon || "",
           };
           await onSubmit(finalData);
         } else {
-          await onSubmit(formData);
+          await onSubmit({ ...formData, url: cleanedUrl });
         }
       } catch {
         // 超时或网络错误，直接提交
-        await onSubmit(formData);
+        await onSubmit({ ...formData, url: cleanedUrl });
       } finally {
         setIsRecognizing(false);
       }
     } else {
-      await onSubmit(formData);
+      await onSubmit({ ...formData, url: cleanedUrl });
     }
   };
 
   const handleRecognize = async () => {
-    if (!formData.url) {
+    const cleanedUrl = cleanUrl(formData.url);
+    setFormData((prev) => ({ ...prev, url: cleanedUrl }));
+
+    if (!cleanedUrl) {
       toast.error("请先输入URL");
       return;
     }
@@ -123,7 +137,7 @@ export function LinkForm({
       const response = await fetch("/api/links/recognize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: formData.url }),
+        body: JSON.stringify({ url: cleanedUrl }),
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -174,6 +188,7 @@ export function LinkForm({
             type="url"
             value={formData.url}
             onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+            onBlur={handleUrlClean}
             placeholder="https://example.com"
             className="flex-1 h-11"
           />
@@ -228,13 +243,26 @@ export function LinkForm({
           value={formData.categoryId}
           onValueChange={(v) => setFormData({ ...formData, categoryId: v })}
         >
-          <SelectTrigger className="mt-1">
+          <SelectTrigger className="mt-1 w-full">
             <SelectValue placeholder="选择分类" />
           </SelectTrigger>
           <SelectContent>
             {categories.map((cat) => (
               <SelectItem key={cat.id} value={cat.id}>
-                {cat.name}
+                <span className="flex items-center gap-2">
+                  <span>{cat.name}</span>
+                  {cat.isPublic ? (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                      <Globe className="h-2.5 w-2.5" />
+                      公开
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                      <Lock className="h-2.5 w-2.5" />
+                      私有
+                    </span>
+                  )}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

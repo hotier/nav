@@ -87,11 +87,13 @@ export function LinkCard({
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [faviconBroken, setFaviconBroken] = useState(false);
   const [faviconSrc, setFaviconSrc] = useState<string | null>(null);
+  const [triedRecognize, setTriedRecognize] = useState(false);
   const [triedHunter, setTriedHunter] = useState(false);
   const [triedGoogle, setTriedGoogle] = useState(false);
   const [faviconKey, setFaviconKey] = useState(0); // key 变化时强制卸载/挂载 img，避免 onError 连锁反应
 
   // 用 ref 保存 tried 状态，避免 setTimeout 闭包读到过期值
+  const triedRecognizeRef = useRef(false);
   const triedHunterRef = useRef(false);
   const triedGoogleRef = useRef(false);
   const faviconTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,12 +125,14 @@ export function LinkCard({
   useEffect(() => {
     setFaviconSrc(link.favicon || null);
     setFaviconKey(0);
+    setTriedRecognize(false);
     setTriedHunter(false);
     setTriedGoogle(false);
+    triedRecognizeRef.current = false;
     triedHunterRef.current = false;
     triedGoogleRef.current = false;
     if (link.favicon) {
-      const cached = localStorage.getItem(`nav_favicon_${link.id}`);
+      const cached = localStorage.getItem(`nav_favicon_v2_${link.id}`);
       if (cached) {
         try {
           const data = JSON.parse(cached) as { broken: boolean; url: string };
@@ -142,15 +146,34 @@ export function LinkCard({
     }
   }, [link.favicon, link.id]);
 
-  // 无 favicon 时自动尝试获取
+  // 无 favicon 时优先通过 HTML 解析获取（再走第三方回退链）
   useEffect(() => {
-    if (!link.favicon && domain && !triedHunterRef.current && !triedGoogleRef.current && !faviconBroken) {
-      triedHunterRef.current = true;
-      setTriedHunter(true);
-      setFaviconKey((k) => k + 1);
-      setFaviconSrc(hunterUrl);
+    if (!link.favicon && domain && !triedRecognizeRef.current && !faviconBroken) {
+      triedRecognizeRef.current = true;
+      setTriedRecognize(true);
+      fetch("/api/links/recognize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: link.url }),
+      })
+        .then((r) => r.json())
+        .then((meta: { favicon?: string; description?: string }) => {
+          if (meta.favicon) {
+            const updates: Record<string, string> = { favicon: meta.favicon };
+            if (!link.description && meta.description) updates.description = meta.description;
+            onUpdate?.(link.id, updates);
+          } else {
+            // HTML 解析没拿到 favicon，走第三方回退
+            triggerFaviconFallback();
+          }
+        })
+        .catch(() => {
+          // recognize 请求失败，走第三方回退
+          triggerFaviconFallback();
+        });
     }
-  }, [link.favicon, domain, triedHunter, triedGoogle, faviconBroken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link.favicon, domain, faviconBroken]);
 
   // 核心回退逻辑：按优先级依次尝试
   const triggerFaviconFallback = useCallback(() => {
@@ -174,7 +197,7 @@ export function LinkCard({
     setFaviconBroken(true);
     try {
       localStorage.setItem(
-        `nav_favicon_${link.id}`,
+        `nav_favicon_v2_${link.id}`,
         JSON.stringify({ broken: true, url: link.favicon || hunterUrl })
       );
     } catch { /* ignore */ }

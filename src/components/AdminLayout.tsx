@@ -199,16 +199,19 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* User Avatar with Dropdown */}
             <div ref={avatarRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleAvatarClick}>
-              <button
-                className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-sky-500 text-white font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden cursor-pointer"
-                title="用户菜单"
-              >
-                {session.user?.image ? (
-                  <img src={proxyImageUrl(session.user.image)} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  session.user?.name?.[0]?.toUpperCase() || session.user?.email?.[0]?.toUpperCase() || "U"
-                )}
-              </button>
+              <div className={cn(session.user?.role === "admin" && "admin-avatar-ring")}>
+                <button
+                  className="flex items-center justify-center w-9 h-9 rounded-full font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden cursor-pointer bg-gradient-to-br from-blue-500 to-sky-500 text-white"
+                  title="用户菜单"
+                >
+                  {session.user?.image ? (
+                    <img src={proxyImageUrl(session.user.image)} alt="" className="w-full h-full object-cover rounded-full" />
+                  ) : (
+                    session.user?.name?.[0]?.toUpperCase() || session.user?.email?.[0]?.toUpperCase() || "U"
+                  )}
+                </button>
+                {session.user?.role === "admin" && <span className="admin-avatar-badge">管</span>}
+              </div>
               {userMenuOpen && (
                 <div className="absolute right-0 top-full mt-2 w-40 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-50">
                   <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">

@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home, AlertTriangle, CheckSquare, MoveRight, Folders, X } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -22,6 +25,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/components/DynamicIcon";
@@ -31,6 +42,7 @@ import {
   writePageCache,
 } from "@/lib/cache-client";
 import { useDataCache } from "@/hooks/useDataCache";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 
 function highlightText(text: string, query: string) {
   if (!query.trim()) return text;
@@ -46,30 +58,63 @@ function highlightText(text: string, query: string) {
 }
 
 export default function LinksPage() {
-  // 统一数据获取（缓存优先 + 后台版本同步）
-  const { data: cacheData, setData } = useDataCache([
+  const { data: session } = useSession();
+  const uid = session?.user?.id;
+
+  // Category 数据
+  const { data: catData } = useDataCache({
+    configs: [
     {
-      name: "Link",
+      name: "Category:mgmt",
       fetch: () =>
-        fetch("/api/links?includePrivate=true&pageSize=200")
-          .then((r) => r.json())
-          .then((d: { data: LinkType[]; total: number }) => d),
-    },
-    {
-      name: "Category",
-      fetch: () =>
-        fetch("/api/categories")
+        fetch("/api/categories?scope=manage&forSelector=true")
           .then((r) => r.json())
           .then((d: Category[]) => ({ data: d, total: d.length })),
     },
-  ]);
+  ], userId: uid });
 
-  const links = (cacheData["Link"] || []) as LinkType[];
-  const categories = (cacheData["Category"] || []) as Category[];
+  // Link 数据 — 无限滚动加载
+  const {
+    items: links,
+    total,
+    hasMore,
+    isLoadingMore,
+    loading: linksLoading,
+    sentinelRef,
+    setItems: setData,
+  } = useInfiniteScroll<LinkType>({
+    name: "Link:mgmt",
+    autoPageSize: true,
+    userId: uid,
+    fetchFn: (page, pageSize) =>
+      fetch(`/api/links?includePrivate=true&page=${page}&pageSize=${pageSize}&scope=manage`)
+        .then((r) => r.json())
+        .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
+  });
+
+  const categories = (catData["Category:mgmt"] || []) as Category[];
+
+  // 根据最长分类名称 + 标签计算下拉菜单宽度
+  // 名称 ~16px/中文字 + 标签 ~40px + icon + gap + check + padding ≈ 120
+  const categoryDropdownMinW = useMemo(() => {
+    const maxLen = categories.reduce((m, c) => Math.max(m, c.name.length), 0);
+    return Math.max(180, maxLen * 16 + 120);
+  }, [categories]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+
+
+  // 批量勾选
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSelectMode, setIsSelectMode] = useState(false);
+
+  // 批量操作弹窗
+  const [batchDialog, setBatchDialog] = useState<{ type: "delete" | "move" } | null>(null);
+  const [batchDialogMoveTargetId, setBatchDialogMoveTargetId] = useState("");
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [isBatchMoving, setIsBatchMoving] = useState(false);
 
   const [newLink, setNewLink] = useState({
     title: "",
@@ -169,7 +214,7 @@ export default function LinksPage() {
     const prevLinks = links;
     const localCat = categories.find((c) => c.id === newCategoryId);
     // 乐观更新
-    setData("Link", (prev) =>
+    setData( (prev) =>
       prev.map((l) =>
         (l as LinkType).id === linkId
           ? { ...(l as LinkType), categoryId: newCategoryId, category: localCat }
@@ -185,7 +230,7 @@ export default function LinksPage() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setData("Link", (prev) =>
+        setData( (prev) =>
           prev.map((l) =>
             (l as LinkType).id === linkId
               ? { ...(l as LinkType), categoryId: updated.categoryId, category: updated.category || localCat }
@@ -194,12 +239,12 @@ export default function LinksPage() {
         );
         toast.success("分类已更新");
       } else {
-        setData("Link", () => prevLinks);
+        setData( () => prevLinks);
         const err = await res.json();
         toast.error(err.error || "操作失败");
       }
     } catch {
-      setData("Link", () => prevLinks);
+      setData( () => prevLinks);
       toast.error("操作失败");
     } finally {
       setCategoryUpdating((prev) => ({ ...prev, [linkId]: false }));
@@ -211,7 +256,7 @@ export default function LinksPage() {
     const prevLinks = links;
     const newPrivate = !currentPrivate;
     // 乐观更新
-    setData("Link", (prev) =>
+    setData( (prev) =>
       prev.map((l) => (l as LinkType).id === linkId ? { ...(l as LinkType), isPrivate: newPrivate } : l)
     );
     setLinkUpdating((prev) => ({ ...prev, [linkId]: true }));
@@ -223,17 +268,17 @@ export default function LinksPage() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setData("Link", (prev) =>
+        setData( (prev) =>
           prev.map((l) => (l as LinkType).id === linkId ? { ...(l as LinkType), isPrivate: updated.isPrivate } : l)
         );
         toast.success(updated.isPrivate ? "已设为私有" : "已设为公开");
       } else {
-        setData("Link", () => prevLinks);
+        setData( () => prevLinks);
         const err = await res.json();
         toast.error(err.error || "操作失败");
       }
     } catch {
-      setData("Link", () => prevLinks);
+      setData( () => prevLinks);
       toast.error("操作失败");
     } finally {
       setLinkUpdating((prev) => ({ ...prev, [linkId]: false }));
@@ -242,18 +287,18 @@ export default function LinksPage() {
 
   // 从缓存恢复连通性检测结果
   useEffect(() => {
-    const cached = readPageCache<Record<string, string>>("CheckResult", 1);
+    const cached = readPageCache<Record<string, string>>("CheckResult", 1, uid);
     if (cached && cached.data.length > 0) {
       setCheckResults(cached.data[0]);
     }
-  }, []);
+  }, [uid]);
 
   // 连通性检测结果变化时持久化到缓存
   useEffect(() => {
     if (Object.keys(checkResults).length > 0) {
-      writePageCache("CheckResult", 1, [checkResults], 1, 0);
+      writePageCache("CheckResult", 1, [checkResults], 1, 0, uid);
     }
-  }, [checkResults]);
+  }, [checkResults, uid]);
 
   const handleCreateLink = async (data: {
     title: string;
@@ -304,28 +349,123 @@ export default function LinksPage() {
     }
   };
 
-  const handleDeleteLink = async (id: string) => {
-    if (!confirm("确定要删除这个链接吗？")) return;
-
-    const prevLinks = links;
-    setData("Link", (prev) => prev.filter((l) => (l as LinkType).id !== id));
-
-    try {
-      const response = await fetch(`/api/links/${id}`, {
-        method: "DELETE",
-      });
-
-      if (response.ok) {
-        toast.success("链接已删除");
-      } else {
-        setData("Link", () => prevLinks);
-        toast.error("删除失败");
-      }
-    } catch {
-      setData("Link", () => prevLinks);
-      toast.error("删除失败");
+  // 批量勾选：全选/取消全选
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredLinks.length && filteredLinks.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredLinks.map((l) => l.id)));
     }
   };
+
+  // 批量勾选：单行切换
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // 批量移动
+  const handleBatchMove = async () => {
+    if (!batchDialogMoveTargetId || selectedIds.size === 0) return;
+    setIsBatchMoving(true);
+    const targetId = batchDialogMoveTargetId;
+    const ids = Array.from(selectedIds);
+    const prevLinks = [...links];
+
+    // 乐观更新
+    setData((prev) =>
+      prev.map((l) => {
+        if (ids.includes((l as LinkType).id)) {
+          const targetCat = categories.find((c) => c.id === targetId);
+          return {
+            ...l,
+            categoryId: targetId,
+            category: targetCat
+              ? { id: targetCat.id, name: targetCat.name, icon: targetCat.icon }
+              : (l as LinkType).category,
+          } as LinkType;
+        }
+        return l;
+      })
+    );
+
+    const results = await Promise.allSettled(
+      ids.map((linkId) =>
+        fetch(`/api/links/${linkId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoryId: targetId }),
+        }).then((r) => {
+          if (!r.ok) throw new Error("Move failed");
+        })
+      )
+    );
+
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      setData(() => prevLinks);
+      toast.error(`${failed} 个链接移动失败，已回滚`);
+    } else {
+      toast.success(`已将 ${ids.length} 个链接移动到目标分类`);
+    }
+
+    setSelectedIds(new Set());
+    setBatchDialog(null);
+    setBatchDialogMoveTargetId("");
+    setIsBatchMoving(false);
+    setIsSelectMode(false);
+  };
+
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBatchDeleting(true);
+    const ids = Array.from(selectedIds);
+    const prevLinks = [...links];
+
+    // 乐观删除
+    setData((prev) => prev.filter((l) => !ids.includes((l as LinkType).id)));
+
+    const results = await Promise.allSettled(
+      ids.map((linkId) =>
+        fetch(`/api/links/${linkId}`, { method: "DELETE" }).then((r) => {
+          if (!r.ok) throw new Error("Delete failed");
+        })
+      )
+    );
+
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      setData(() => prevLinks);
+      toast.error(`${failed} 个链接删除失败，已回滚`);
+    } else {
+      toast.success(`已删除 ${ids.length} 个链接`);
+    }
+
+    setSelectedIds(new Set());
+    setBatchDialog(null);
+    setIsBatchDeleting(false);
+    setIsSelectMode(false);
+  };
+
+  // 批量移动可用的目标分类：若全部选中链接都在同一分类，则排除该分类
+  const batchMoveCategories = useMemo(() => {
+    if (selectedIds.size === 0) return [];
+    const selectedLinks = links.filter((l) => selectedIds.has(l.id));
+    const currentCatIds = new Set(selectedLinks.map((l) => l.categoryId));
+    // 如果所有选中链接都在同一个分类，排除那个分类
+    if (currentCatIds.size === 1) {
+      return categories.filter((c) => c.id !== [...currentCatIds][0]);
+    }
+    return categories;
+  }, [categories, links, selectedIds]);
 
   const handleEditLink = (link: LinkType) => {
     setEditingLinkId(link.id);
@@ -495,7 +635,7 @@ export default function LinksPage() {
     );
 
   const stats = {
-    totalLinks: links.length,
+    totalLinks: total,
     totalCategories: categories.length,
     publicLinks: links.filter((l) => !l.isPrivate).length,
     privateLinks: links.filter((l) => l.isPrivate).length,
@@ -509,7 +649,7 @@ export default function LinksPage() {
           <div>
             <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-space-grotesk)" }}>链接管理</h1>
             <p className="text-muted-foreground">
-              共 {links.length} 个链接
+              共 {total} 个链接
             </p>
           </div>
 
@@ -619,8 +759,9 @@ export default function LinksPage() {
                   top: (catBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
                   left: (catBtnRef.current?.getBoundingClientRect().left ?? 0) + (catBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
                   transform: "translateX(-50%)",
+                  minWidth: `${categoryDropdownMinW}px`,
                 }}
-                className="z-[9999] min-w-[140px] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
               >
                 <button
                   onClick={() => { setCategoryFilter("all"); setCatMenuOpen(false); }}
@@ -643,8 +784,21 @@ export default function LinksPage() {
                     )}
                   >
                     <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
-                    <span className="flex-1 text-left">{c.name}</span>
-                    {categoryFilter === c.id && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                    <span className="flex-1 text-left truncate">{c.name}</span>
+                    {c.isPublic ? (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 flex-shrink-0">
+                        <Globe className="h-2.5 w-2.5" />
+                        公开
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 flex-shrink-0">
+                        <Lock className="h-2.5 w-2.5" />
+                        私有
+                      </span>
+                    )}
+                    <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center">
+                      {categoryFilter === c.id && <Check className="h-3.5 w-3.5 text-violet-500" />}
+                    </span>
                   </button>
                 ))}
               </div>,
@@ -776,12 +930,85 @@ export default function LinksPage() {
                 管理你的所有链接
               </p>
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 text-xs"
+              onClick={() => {
+                if (isSelectMode) {
+                  setSelectedIds(new Set());
+                  setBatchDialogMoveTargetId("");
+                  setIsSelectMode(false);
+                } else {
+                  setIsSelectMode(true);
+                }
+              }}
+            >
+              {isSelectMode ? (
+                <>
+                  <X className="h-3.5 w-3.5 mr-1" />
+                  取消选择
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="h-3.5 w-3.5 mr-1" />
+                  多选
+                </>
+              )}
+            </Button>
           </div>
+
+          {/* 批量操作栏 */}
+          {isSelectMode && selectedIds.size > 0 && (
+            <div className="mb-3 px-3 py-2 rounded-lg bg-primary/10 dark:bg-primary/10 border border-primary/30 dark:border-primary/30 flex items-center gap-3">
+              <span className="text-sm font-medium text-primary dark:text-primary">
+                已选 <strong>{selectedIds.size}</strong> 个链接
+              </span>
+              <div className="flex-1" />
+              <Button
+                size="sm"
+                variant="default"
+                className="h-8 text-xs"
+                onClick={() => { setBatchDialogMoveTargetId(""); setBatchDialog({ type: "move" }); }}
+              >
+                <Folders className="h-3.5 w-3.5 mr-1" />
+                批量移动
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-8 text-xs"
+                onClick={() => setBatchDialog({ type: "delete" })}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                批量删除
+              </Button>
+            </div>
+          )}
+          {isSelectMode && selectedIds.size === 0 && (
+            <div className="mb-3 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-500/10 border border-slate-200 dark:border-slate-500/30 flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">请勾选需要操作的链接</span>
+            </div>
+          )}
 
           <div className="overflow-visible">
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isSelectMode && (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={
+                          selectedIds.size === filteredLinks.length && filteredLinks.length > 0
+                            ? true
+                            : selectedIds.size > 0
+                            ? "indeterminate"
+                            : false
+                        }
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
+                  )}
                   <TableHead className="w-[250px]">标题</TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead>分类</TableHead>
@@ -793,13 +1020,21 @@ export default function LinksPage() {
               <TableBody>
                 {filteredLinks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={isSelectMode ? 7 : 6} className="text-center py-8">
                       没有找到链接
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredLinks.map((link) => (
                     <TableRow key={link.id}>
+                      {isSelectMode && (
+                        <TableCell className="w-10">
+                          <Checkbox
+                            checked={selectedIds.has(link.id)}
+                            onCheckedChange={() => toggleSelect(link.id)}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-medium">
                         {link.isPinned && (
                           <span className="text-primary mr-1" title="已置顶">
@@ -838,7 +1073,8 @@ export default function LinksPage() {
                           {linkCategoryId === link.id && (
                             <div
                               ref={linkCategoryMenuRef}
-                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[140px] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                              style={{ minWidth: `${categoryDropdownMinW}px` }}
                             >
                               {categories.map((c) => (
                                 <button
@@ -853,8 +1089,21 @@ export default function LinksPage() {
                                   )}
                                 >
                                   <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-slate-500" />
-                                  <span className="flex-1 text-left">{c.name}</span>
-                                  {link.categoryId === c.id && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                                  <span className="flex-1 text-left truncate">{c.name}</span>
+                                  {c.isPublic ? (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 flex-shrink-0">
+                                      <Globe className="h-2.5 w-2.5" />
+                                      公开
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 flex-shrink-0">
+                                      <Lock className="h-2.5 w-2.5" />
+                                      私有
+                                    </span>
+                                  )}
+                                  <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center">
+                                    {link.categoryId === c.id && <Check className="h-3.5 w-3.5 text-violet-500" />}
+                                  </span>
                                 </button>
                               ))}
                             </div>
@@ -978,13 +1227,6 @@ export default function LinksPage() {
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteLink(link.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -995,7 +1237,117 @@ export default function LinksPage() {
           </div>
         </div>
         </div>
+
+        {/* 无限滚动哨兵 */}
+        <div ref={sentinelRef} className="flex justify-center py-6">
+          {isLoadingMore && (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          )}
+        </div>
       </div>
+
+
+      {/* Batch Operation Dialog */}
+      <Dialog open={!!batchDialog} onOpenChange={() => { setBatchDialog(null); setBatchDialogMoveTargetId(""); }}>
+        <DialogContent className="sm:max-w-md">
+          {batchDialog?.type === "delete" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-red-500" />
+                  批量删除
+                </DialogTitle>
+                <DialogDescription className="pt-2">
+                  <p>
+                    确定要删除已选中的{" "}
+                    <strong className="text-slate-800 dark:text-slate-200">
+                      {selectedIds.size} 个
+                    </strong>{" "}
+                    链接吗？
+                  </p>
+                  <p className="mt-2 text-red-500 dark:text-red-400 text-sm">
+                    此操作不可撤销。
+                  </p>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  variant="outline"
+                  onClick={() => setBatchDialog(null)}
+                  disabled={isBatchDeleting}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleBatchDelete}
+                  disabled={isBatchDeleting}
+                >
+                  {isBatchDeleting ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-1" />
+                  )}
+                  确认删除
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Folders className="h-5 w-5 text-violet-500" />
+                  批量移动
+                </DialogTitle>
+                <DialogDescription className="pt-2">
+                  <p>
+                    将已选中的{" "}
+                    <strong className="text-slate-800 dark:text-slate-200">
+                      {selectedIds.size} 个
+                    </strong>{" "}
+                    链接移动到指定分类
+                  </p>
+                  <div className="mt-3">
+                    <Select value={batchDialogMoveTargetId} onValueChange={setBatchDialogMoveTargetId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="选择目标分类" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {batchMoveCategories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  variant="outline"
+                  onClick={() => setBatchDialog(null)}
+                  disabled={isBatchMoving}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="default"
+                  onClick={handleBatchMove}
+                  disabled={!batchDialogMoveTargetId || isBatchMoving}
+                >
+                  {isBatchMoving ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <MoveRight className="h-4 w-4 mr-1" />
+                  )}
+                  确认移动
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

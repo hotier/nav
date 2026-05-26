@@ -28,6 +28,7 @@ export const createCategorySchema = z.object({
   icon: z.string().max(100).optional(),
   parentId: z.string().optional().nullable(),
   sortOrder: z.number().int().default(0),
+  isPublic: z.boolean().default(false),
 });
 
 export const updateCategorySchema = z.object({
@@ -35,6 +36,7 @@ export const updateCategorySchema = z.object({
   icon: z.string().max(100).optional().nullable(),
   parentId: z.string().optional().nullable(),
   sortOrder: z.number().int().optional(),
+  isPublic: z.boolean().optional(),
 });
 
 export const searchSchema = z.object({

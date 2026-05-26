@@ -14,12 +14,18 @@
 const CACHE_PREFIX = "nav_cache_";
 const VERSION_PREFIX = "nav_version_";
 
-function cachePageKey(table: string, page: number): string {
-  return `${CACHE_PREFIX}${table}_page_${page}`;
+/** 按 userId 隔离命名空间，防止切换账号残留缓存；不传 userId 则用公共空间 */
+function scopeKey(table: string, userId?: string | null): string {
+  const ns = userId ? `u_${userId}` : "pub";
+  return `${ns}__${table}`;
 }
 
-function versionKey(table: string): string {
-  return `${VERSION_PREFIX}${table}`;
+function cachePageKey(table: string, page: number, userId?: string | null): string {
+  return `${CACHE_PREFIX}${scopeKey(table, userId)}_page_${page}`;
+}
+
+function versionKey(table: string, userId?: string | null): string {
+  return `${VERSION_PREFIX}${scopeKey(table, userId)}`;
 }
 
 // ==================== 类型定义 ====================
@@ -34,18 +40,18 @@ export interface CachedPage<T> {
 // ==================== 版本管理 ====================
 
 /** 读取本地缓存的版本号 */
-export function getLocalVersion(table: string): number {
+export function getLocalVersion(table: string, userId?: string | null): number {
   try {
-    return parseInt(localStorage.getItem(versionKey(table)) || "0", 10);
+    return parseInt(localStorage.getItem(versionKey(table, userId)) || "0", 10);
   } catch {
     return 0;
   }
 }
 
 /** 写入本地版本号 */
-function setLocalVersion(table: string, version: number): void {
+function setLocalVersion(table: string, version: number, userId?: string | null): void {
   try {
-    localStorage.setItem(versionKey(table), String(version));
+    localStorage.setItem(versionKey(table, userId), String(version));
   } catch {
     // localStorage 不可用（无痕模式等）
   }
@@ -66,9 +72,9 @@ export async function getServerVersion(table: string): Promise<number> {
 // ==================== 分页缓存读写 ====================
 
 /** 读取指定分页的缓存数据，无缓存返回 null */
-export function readPageCache<T>(table: string, page: number): CachedPage<T> | null {
+export function readPageCache<T>(table: string, page: number, userId?: string | null): CachedPage<T> | null {
   try {
-    const raw = localStorage.getItem(cachePageKey(table, page));
+    const raw = localStorage.getItem(cachePageKey(table, page, userId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CachedPage<T>;
     if (!parsed.data || !Array.isArray(parsed.data)) return null;
@@ -85,6 +91,7 @@ export function writePageCache<T>(
   data: T[],
   total: number,
   version: number,
+  userId?: string | null,
 ): void {
   try {
     const entry: CachedPage<T> = {
@@ -93,8 +100,8 @@ export function writePageCache<T>(
       cachedAt: Date.now(),
       version,
     };
-    localStorage.setItem(cachePageKey(table, page), JSON.stringify(entry));
-    setLocalVersion(table, version);
+    localStorage.setItem(cachePageKey(table, page, userId), JSON.stringify(entry));
+    setLocalVersion(table, version, userId);
   } catch {
     console.warn(`[cache] 写入缓存失败: ${table} page ${page}`);
   }
@@ -110,8 +117,9 @@ export function optimisticAddToCache<T>(
   table: string,
   page: number,
   item: T,
+  userId?: string | null,
 ): { previousData: T[] | null; previousTotal: number } {
-  const cached = readPageCache<T>(table, page);
+  const cached = readPageCache<T>(table, page, userId);
   const previousData = cached?.data || null;
   const previousTotal = cached?.total || 0;
 
@@ -121,7 +129,8 @@ export function optimisticAddToCache<T>(
     page,
     previousData ? [item, ...previousData] : [item],
     previousTotal + 1,
-    getLocalVersion(table) || 1,
+    getLocalVersion(table, userId) || 1,
+    userId,
   );
 
   return { previousData, previousTotal };
@@ -136,15 +145,16 @@ export function rollbackCache<T>(
   data: T[] | null,
   total: number,
   version?: number,
+  userId?: string | null,
 ): void {
   if (data === null) {
     // 无法恢复，清除分页缓存
     try {
-      localStorage.removeItem(cachePageKey(table, page));
+      localStorage.removeItem(cachePageKey(table, page, userId));
     } catch {
       // ignore
     }
     return;
   }
-  writePageCache(table, page, data, total, version || getLocalVersion(table));
+  writePageCache(table, page, data, total, version || getLocalVersion(table, userId), userId);
 }
