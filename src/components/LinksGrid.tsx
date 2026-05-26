@@ -17,6 +17,7 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { LinkCard } from "@/components/LinkCard";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { Category, Link as LinkType } from "@/types";
 import toast from "react-hot-toast";
 
@@ -30,6 +31,8 @@ interface LinksGridProps {
 export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuery }: LinksGridProps) {
   const [links, setLinks] = useState(initialLinks);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -124,8 +127,14 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个链接吗？")) return;
+  const handleDelete = (id: string) => {
+    setDeleteTargetId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
+    const id = deleteTargetId;
+    setIsDeleting(true);
 
     const prevLinks = links;
     // 乐观删除（策略4：先更新视图，页面瞬时响应）
@@ -146,53 +155,46 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
     } catch {
       setLinks(prevLinks);
       toast.error("删除失败");
+    } finally {
+      setIsDeleting(false);
+      setDeleteTargetId(null);
     }
   };
 
   if (!isAdmin) {
     // Non-admin view - no drag and drop
     return (
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
-        {links.map((link) => (
-          <LinkCard
-            key={link.id}
-            link={link}
-            categories={categories}
-            isAdmin={false}
-            searchQuery={searchQuery}
-          />
-        ))}
-      </div>
+      <>
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
+          {links.map((link) => (
+            <LinkCard
+              key={link.id}
+              link={link}
+              categories={categories}
+              isAdmin={false}
+              searchQuery={searchQuery}
+            />
+          ))}
+        </div>
+        <ConfirmDialog
+          open={!!deleteTargetId}
+          onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}
+          title="删除链接"
+          description={
+            <p>确定要删除这个链接吗？<span className="mt-2 block text-red-500 text-sm">此操作不可撤销。</span></p>
+          }
+          confirmLabel="确认删除"
+          onConfirm={handleConfirmDelete}
+          loading={isDeleting}
+        />
+      </>
     );
   }
 
   // Admin view - only render drag and drop after hydration to prevent mismatch
   if (!isHydrated) {
     return (
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
-        {links.map((link) => (
-          <LinkCard
-            key={link.id}
-            link={link}
-            categories={categories}
-            isAdmin={isAdmin}
-            searchQuery={searchQuery}
-            onUpdate={handleUpdate}
-            onDelete={handleDelete}
-            isDraggable={false}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
-      <SortableContext items={links} strategy={rectSortingStrategy}>
+      <>
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
           {links.map((link) => (
             <LinkCard
@@ -203,11 +205,60 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
               searchQuery={searchQuery}
               onUpdate={handleUpdate}
               onDelete={handleDelete}
-              isDraggable={true}
+              isDraggable={false}
             />
           ))}
         </div>
-      </SortableContext>
-    </DndContext>
+        <ConfirmDialog
+          open={!!deleteTargetId}
+          onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}
+          title="删除链接"
+          description={
+            <p>确定要删除这个链接吗？<span className="mt-2 block text-red-500 text-sm">此操作不可撤销。</span></p>
+          }
+          confirmLabel="确认删除"
+          onConfirm={handleConfirmDelete}
+          loading={isDeleting}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={links} strategy={rectSortingStrategy}>
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
+            {links.map((link) => (
+              <LinkCard
+                key={link.id}
+                link={link}
+                categories={categories}
+                isAdmin={isAdmin}
+                searchQuery={searchQuery}
+                onUpdate={handleUpdate}
+                onDelete={handleDelete}
+                isDraggable={true}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+      <ConfirmDialog
+        open={!!deleteTargetId}
+        onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}
+        title="删除链接"
+        description={
+          <p>确定要删除这个链接吗？<span className="mt-2 block text-red-500 text-sm">此操作不可撤销。</span></p>
+        }
+        confirmLabel="确认删除"
+        onConfirm={handleConfirmDelete}
+        loading={isDeleting}
+      />
+    </>
   );
 }

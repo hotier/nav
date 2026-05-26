@@ -128,11 +128,16 @@ export function useInfiniteScroll<T>({
   const fetchFnRef = useRef(fetchFn);
   fetchFnRef.current = fetchFn;
 
+  // 缓存表名：autoPageSize 时包含 pageSize 后缀，避免跨视口缓存污染
+  const cacheNameRef = useRef(name);
+
   // ===== 视口自适应：在 layout effect 中计算（此时 DOM 已就绪）=====
   useLayoutEffect(() => {
     const autoConfig = resolveAutoConfig(autoPageSize);
     if (autoConfig) {
-      pageSizeRef.current = calcViewportPageSize(autoConfig);
+      const ps = calcViewportPageSize(autoConfig);
+      pageSizeRef.current = ps;
+      cacheNameRef.current = `${name}_ps${ps}`;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -154,10 +159,11 @@ export function useInfiniteScroll<T>({
 
     const init = async () => {
       const ps = pageSizeRef.current;
+      const cacheName = cacheNameRef.current;
       const currentUserId = userIdRef.current || null;
 
       // 1. 读取第一页缓存，立即渲染
-      const cached = readPageCache<T>(name, 1, currentUserId);
+      const cached = readPageCache<T>(cacheName, 1, currentUserId);
       if (cached && cached.data.length > 0 && !cancelled) {
         setItemsState(cached.data);
         setTotal(cached.total);
@@ -168,7 +174,7 @@ export function useInfiniteScroll<T>({
         setHasMoreBoth(mightBeMoreFromCache);
       }
 
-      // 2. 后台比对版本号，按需拉取
+      // 2. 后台比对版本号（版本号基于原始表名，不含 pageSize 后缀）
       try {
         const serverVer = await getServerVersion(name);
         const localVer = getLocalVersion(name, currentUserId);
@@ -203,7 +209,7 @@ export function useInfiniteScroll<T>({
           return;
         }
 
-        writePageCache(name, 1, result.data, result.total, serverVer || 1, currentUserId);
+        writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
         if (!cancelled) {
           setItemsState(result.data);
           setTotal(result.total);
@@ -262,6 +268,7 @@ export function useInfiniteScroll<T>({
 
     const nextPage = pageRef.current + 1;
     const ps = pageSizeRef.current;
+    const cacheName = cacheNameRef.current;
     const currentUserId = userIdRef.current || null;
 
     try {
@@ -273,7 +280,7 @@ export function useInfiniteScroll<T>({
       }
 
       const serverVer = await getServerVersion(name);
-      writePageCache(name, nextPage, result.data, result.total, serverVer || 1, currentUserId);
+      writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
 
       setItemsState((prev) => {
         const merged = [...prev, ...result.data];
@@ -300,6 +307,7 @@ export function useInfiniteScroll<T>({
 
   const refresh = useCallback(async () => {
     const ps = pageSizeRef.current;
+    const cacheName = cacheNameRef.current;
     const currentUserId = userIdRef.current || null;
     try {
       setLoading(true);
@@ -307,7 +315,7 @@ export function useInfiniteScroll<T>({
       if (!Array.isArray(result?.data)) return;
 
       const serverVer = await getServerVersion(name);
-      writePageCache(name, 1, result.data, result.total, serverVer || 1, currentUserId);
+      writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
 
       const stillMore = result.data.length < result.total;
       setItemsState(result.data);

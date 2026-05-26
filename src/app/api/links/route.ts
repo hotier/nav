@@ -32,25 +32,26 @@ export async function GET(request: Request) {
       ? [{ isPinned: "desc" }, { createdAt: "asc" }]
       : [{ isPinned: "desc" }, { sortOrder: "asc" }];
 
-    // SWR 缓存 — 按 scope 区分缓存键
+    // SWR 缓存 — 按 scope 区分缓存键，数据+总数一同缓存避免独立 count 查询
     const uid = userId || "anon";
     const scopeKey = cacheScope(scope);
     const cacheKey = `links:api:v2:${scopeKey}:${uid}:${categoryId || "all"}:p${page}:${sort}`;
-    const links = await swr(cacheKey, () => {
-      return prisma.link.findMany({
-        where,
-        include: {
-          user: { select: { id: true, name: true, username: true, image: true } },
-          category: { select: { id: true, name: true, icon: true } },
-        },
-        orderBy,
-        skip,
-        take: pageSize,
-      });
+    const { data: links, total } = await swr(cacheKey, async () => {
+      const [data, total] = await Promise.all([
+        prisma.link.findMany({
+          where,
+          include: {
+            user: { select: { id: true, name: true, username: true, image: true } },
+            category: { select: { id: true, name: true, icon: true } },
+          },
+          orderBy,
+          skip,
+          take: pageSize,
+        }),
+        prisma.link.count({ where }),
+      ]);
+      return { data, total };
     }, 30_000);
-
-    // 总数（轻量 COUNT，不缓存）
-    const total = await prisma.link.count({ where });
 
     return NextResponse.json({ data: links, total });
   } catch (error) {
