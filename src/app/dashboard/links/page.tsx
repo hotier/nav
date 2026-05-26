@@ -338,38 +338,129 @@ export default function LinksPage() {
     isPinned?: boolean;
   }) => {
     setIsSubmitting(true);
-    try {
-      const linkUrl = editingLinkId ? `/api/links/${editingLinkId}` : "/api/links";
-      const method = editingLinkId ? "PUT" : "POST";
+    const isEdit = !!editingLinkId;
+    const prevLinks = [...links];
+    const targetCategory = categories.find((c) => c.id === data.categoryId);
 
-      const response = await fetch(linkUrl, {
-        method,
+    const resetDialog = () => {
+      setIsDialogOpen(false);
+      setEditingLinkId(null);
+      setNewLink({
+        title: "",
+        url: "",
+        altUrl: "",
+        description: "",
+        favicon: "",
+        categoryId: "",
+        isPrivate: false,
+        isPinned: false,
+      });
+    };
+
+    // ===== 编辑流程 =====
+    if (isEdit) {
+      // 乐观：立即替换列表中的旧条目
+      setData((prev) =>
+        prev.map((l) => {
+          const link = l as LinkType;
+          return link.id === editingLinkId
+            ? {
+                ...link,
+                title: data.title,
+                url: data.url,
+                altUrl: data.altUrl || null,
+                description: data.description || null,
+                favicon: data.favicon || null,
+                categoryId: data.categoryId,
+                category: targetCategory
+                  ? { id: targetCategory.id, name: targetCategory.name, icon: targetCategory.icon }
+                  : link.category,
+                isPrivate: data.isPrivate,
+                isPinned: data.isPinned || false,
+              } as LinkType
+            : l;
+        })
+      );
+
+      try {
+        const response = await fetch(`/api/links/${editingLinkId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+
+        if (response.ok) {
+          const savedLink = await response.json();
+          toast.success("链接更新成功");
+          resetDialog();
+          handleCheckSingle(savedLink.id, savedLink.url);
+        } else {
+          throw new Error((await response.json()).error || "更新失败");
+        }
+      } catch {
+        setData(() => prevLinks);
+        toast.error("操作失败");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // ===== 创建流程 =====
+    const tempId = `temp_${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      title: data.title,
+      url: data.url,
+      altUrl: data.altUrl || null,
+      description: data.description || null,
+      favicon: data.favicon || null,
+      categoryId: data.categoryId,
+      category: targetCategory
+        ? { id: targetCategory.id, name: targetCategory.name, icon: targetCategory.icon }
+        : undefined,
+      isPrivate: data.isPrivate,
+      isPinned: data.isPinned || false,
+      userId: uid || "",
+      user: {
+        id: uid || "",
+        name: session?.user?.name || "",
+        username: "",
+        image: session?.user?.image || "",
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      sortOrder: 0,
+      status: null,
+    } as LinkType;
+    setData((prev) => [optimistic, ...prev]);
+
+    try {
+      const response = await fetch("/api/links", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
 
       if (response.ok) {
         const savedLink = await response.json();
-        toast.success(editingLinkId ? "链接更新成功" : "链接创建成功");
-        setIsDialogOpen(false);
-        setEditingLinkId(null);
-        setNewLink({
-          title: "",
-          url: "",
-          altUrl: "",
-          description: "",
-          favicon: "",
-          categoryId: "",
-          isPrivate: false,
-          isPinned: false,
-        });
-        // 创建/更新后自动检测连通性
+        // temp ID → 真实 ID
+        setData((prev) =>
+          prev.map((l) => {
+            const link = l as LinkType;
+            return link.id === tempId
+              ? { ...link, id: savedLink.id, sortOrder: savedLink.sortOrder ?? link.sortOrder } as LinkType
+              : l;
+          })
+        );
+        toast.success("链接创建成功");
+        resetDialog();
         handleCheckSingle(savedLink.id, savedLink.url);
       } else {
-        const error = await response.json();
-        toast.error(error.error || "操作失败");
+        throw new Error((await response.json()).error || "创建失败");
       }
     } catch {
+      setData(() => prevLinks);
       toast.error("操作失败");
     } finally {
       setIsSubmitting(false);

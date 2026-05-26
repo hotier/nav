@@ -49,7 +49,7 @@ export function getLocalVersion(table: string, userId?: string | null): number {
 }
 
 /** 写入本地版本号 */
-function setLocalVersion(table: string, version: number, userId?: string | null): void {
+export function setLocalVersion(table: string, version: number, userId?: string | null): void {
   try {
     localStorage.setItem(versionKey(table, userId), String(version));
   } catch {

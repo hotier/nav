@@ -24,6 +24,7 @@ import {
   writePageCache,
   getLocalVersion,
   getServerVersion,
+  setLocalVersion,
 } from "@/lib/cache-client";
 
 // ==================== 类型定义 ====================
@@ -210,6 +211,7 @@ export function useInfiniteScroll<T>({
         }
 
         writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
+        setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
         if (!cancelled) {
           setItemsState(result.data);
           setTotal(result.total);
@@ -242,11 +244,12 @@ export function useInfiniteScroll<T>({
     };
   }, [name, uidDep]);
 
-  // ===== IntersectionObserver：触底加载 =====
+  // ===== IntersectionObserver + 滚动兜底：触底加载 =====
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
 
+    // 方案1：IntersectionObserver（主要触发机制）
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
@@ -254,11 +257,32 @@ export function useInfiniteScroll<T>({
           loadNextPage();
         }
       },
-      { rootMargin: "200px" }
+      { rootMargin: "400px" }
     );
 
     observer.observe(sentinel);
-    return () => observer.disconnect();
+
+    // 方案2：滚动事件兜底（部分环境 IntersectionObserver 可能不触发）
+    let throttling = false;
+    const handleScroll = () => {
+      if (throttling || !hasMoreRef.current || loadingRef.current) return;
+      throttling = true;
+      requestAnimationFrame(() => {
+        const rect = sentinel.getBoundingClientRect();
+        // sentinel 距离视口底部 400px 以内 → 触发加载
+        if (rect.top < window.innerHeight + 400) {
+          loadNextPage();
+        }
+        throttling = false;
+      });
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", handleScroll);
+    };
   }, [items.length]); // items 变化时重新绑定（sentinel 位置可能变化）
 
   const loadNextPage = useCallback(async () => {
@@ -281,6 +305,7 @@ export function useInfiniteScroll<T>({
 
       const serverVer = await getServerVersion(name);
       writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
+      setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
 
       setItemsState((prev) => {
         const merged = [...prev, ...result.data];
@@ -316,6 +341,7 @@ export function useInfiniteScroll<T>({
 
       const serverVer = await getServerVersion(name);
       writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
+      setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
 
       const stillMore = result.data.length < result.total;
       setItemsState(result.data);
