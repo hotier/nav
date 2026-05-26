@@ -197,6 +197,7 @@ body {
   background: linear-gradient(135deg, 
     rgba(59, 130, 246, 0.08), 
     rgba(168, 85, 247, 0.04));
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }

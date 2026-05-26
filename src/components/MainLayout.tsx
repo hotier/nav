@@ -38,6 +38,7 @@ interface MainLayoutProps {
     name: string;
     icon?: string | null;
     parentId?: string | null;
+    isPublic?: boolean | null;
     _count?: { links: number };
     children?: Array<{
       id: string;
@@ -424,7 +425,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
             <DialogTitle>添加链接</DialogTitle>
           </DialogHeader>
           <LinkForm
-            categories={categories.filter((c) => !c.parentId)}
+            categories={categories.filter((c) => !c.parentId).map((c) => ({ id: c.id, name: c.name, isPublic: c.isPublic ?? true })) as Array<{ id: string; name: string; isPublic: boolean }>}
             onSubmit={handleAddLink}
             onCancel={() => setShowAddLink(false)}
             isSubmitting={isSubmitting}

@@ -167,6 +167,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <button
               className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100/80 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
               onClick={() => setMobileMenuOpen(true)}
+              title="打开菜单"
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -275,6 +276,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               <button
                 className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
                 onClick={() => setMobileMenuOpen(false)}
+                title="关闭菜单"
               >
                 <X className="h-5 w-5 text-slate-500" />
               </button>
