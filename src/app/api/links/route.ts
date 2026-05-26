@@ -35,11 +35,14 @@ export async function GET(request: Request) {
     // SWR 缓存 — 按 scope 区分缓存键
     const uid = userId || "anon";
     const scopeKey = cacheScope(scope);
-    const cacheKey = `links:api:${scopeKey}:${uid}:${categoryId || "all"}:p${page}:${sort}`;
+    const cacheKey = `links:api:v2:${scopeKey}:${uid}:${categoryId || "all"}:p${page}:${sort}`;
     const links = await swr(cacheKey, () => {
       return prisma.link.findMany({
         where,
-        include: { category: { select: { id: true, name: true, icon: true } } },
+        include: {
+          user: { select: { id: true, name: true, username: true, image: true } },
+          category: { select: { id: true, name: true, icon: true } },
+        },
         orderBy,
         skip,
         take: pageSize,

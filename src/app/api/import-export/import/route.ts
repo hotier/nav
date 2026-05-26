@@ -174,6 +174,7 @@ export async function POST(request: Request) {
             name: "默认分类",
             sortOrder: 0,
             isPublic: true,
+            userId: session.user.id,
           },
         });
         targetCategoryId = newCategory.id;

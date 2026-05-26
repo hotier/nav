@@ -14,6 +14,12 @@ export interface Link {
   createdAt: Date;
   updatedAt: Date;
   category?: Category;
+  user?: {
+    id: string;
+    name: string | null;
+    username: string | null;
+    image: string | null;
+  };
 }
 
 export interface Category {
@@ -31,6 +37,12 @@ export interface Category {
   links?: Link[];
   _count?: {
     links: number;
+  };
+  user?: {
+    id: string;
+    name: string | null;
+    username: string | null;
+    image: string | null;
   };
 }
 

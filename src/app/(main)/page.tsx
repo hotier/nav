@@ -1,16 +1,17 @@
 import { auth } from "@/lib/auth";
-import { getAllLinks } from "@/lib/queries";
+import { getLinkCount } from "@/lib/queries";
 import { HomeContentClient } from "@/components/HomeContentClient";
 
 export default async function HomePage() {
   const session = await auth();
   const userId = session?.user?.id;
 
-  const allLinks = await getAllLinks(userId);
+  const linkCount = await getLinkCount(userId);
 
   return (
     <HomeContentClient
-      linkCount={allLinks.length}
+      userId={userId ?? null}
+      linkCount={linkCount}
       isAdmin={session?.user?.role === "admin"}
     />
   );

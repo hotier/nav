@@ -146,7 +146,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
     setIsSubmitting(true);
     setShowAddLink(false);
     // 乐观写入缓存（策略4：先更新本地缓存，页面瞬时响应）
-    const { previousData, previousTotal } = optimisticAddToCache("Link", 1, data as unknown as Record<string, unknown>);
+    const { previousData, previousTotal } = optimisticAddToCache("Link", 1, data as unknown as Record<string, unknown>, session?.user?.id);
 
     try {
       const response = await fetch("/api/links", {
@@ -159,12 +159,12 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
         toast.success("链接添加成功");
       } else {
         // 回滚缓存
-        rollbackCache("Link", 1, previousData, previousTotal);
+        rollbackCache("Link", 1, previousData, previousTotal, undefined, session?.user?.id);
         const error = await response.json();
         toast.error(error.error || "添加失败");
       }
     } catch {
-      rollbackCache("Link", 1, previousData, previousTotal);
+      rollbackCache("Link", 1, previousData, previousTotal, undefined, session?.user?.id);
       toast.error("添加失败");
     } finally {
       setIsSubmitting(false);

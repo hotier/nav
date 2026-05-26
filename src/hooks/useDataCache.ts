@@ -57,9 +57,26 @@ interface UseDataCacheReturn {
 export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
   const { configs, userId } = options;
 
-  // 单次渲染中所有 setState 会被 React 18+ 自动批处理为一次重绘
-  const [allData, setAllData] = useState<Record<string, unknown[]>>({});
-  const [loading, setLoading] = useState(true);
+  // 同步读取 localStorage 缓存作为初始状态 → 消除首次渲染的空状态（loading spinner→content 闪烁）
+  const [allData, setAllData] = useState<Record<string, unknown[]>>(() => {
+    const uid = userId || null;
+    const cached: Record<string, unknown[]> = {};
+    for (const { name } of configs) {
+      const c = readPageCache(name, 1, uid);
+      if (c && c.data.length > 0) {
+        cached[name] = c.data;
+      }
+    }
+    return cached;
+  });
+  const [loading, setLoading] = useState(() => {
+    const uid = userId || null;
+    for (const { name } of configs) {
+      const c = readPageCache(name, 1, uid);
+      if (c && c.data.length > 0) return false;
+    }
+    return true;
+  });
   const [syncing, setSyncing] = useState(false);
 
   // 存 configs 引用，避免 stale closure
@@ -84,7 +101,7 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
       const cfgs = configsRef.current;
       const currentUserId = userIdRef.current || null;
 
-      // 1. 同步读取所有表缓存，立即渲染
+      // 优先用 lazy init 时已有的数据，若无缓存再同步读取
       const cached: Record<string, unknown[]> = {};
       for (const { name } of cfgs) {
         const c = readPageCache(name, 1, currentUserId);
@@ -92,8 +109,13 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
           cached[name] = c.data;
         }
       }
+      // 仅当 lazy init 无缓存而 effect 阶段读到缓存时，才更新状态
       if (Object.keys(cached).length > 0 && !cancelled) {
-        setAllData(cached);
+        setAllData((prev) => {
+          // 如果 lazy init 已读取了同一份数据（引用相同），跳过更新
+          const hasNew = Object.keys(cached).some((key) => !(key in prev) || prev[key] !== cached[key]);
+          return hasNew ? cached : prev;
+        });
         setLoading(false);
       }
 

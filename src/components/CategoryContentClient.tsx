@@ -20,11 +20,12 @@ function findCategoryBySlug(slug: string, categories: Category[]): Category | un
 }
 
 interface Props {
+  userId: string | null;
   slug: string;
   isAdmin: boolean;
 }
 
-export function CategoryContentClient({ slug, isAdmin }: Props) {
+export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
   const { data: catData, loading: catLoading } = useDataCache({ configs: [
     {
       name: "Category",
@@ -33,10 +34,11 @@ export function CategoryContentClient({ slug, isAdmin }: Props) {
           .then((r) => r.json())
           .then((d: Category[]) => ({ data: d, total: d.length })),
     },
-  ] });
+  ], userId });
 
   const { items: allLinks, loading: linksLoading, isLoadingMore, sentinelRef } = useInfiniteScroll<LinkType>({
     name: "Link",
+    userId,
     autoPageSize: { cardHeight: 140, columns: () => {
       const w = window.innerWidth;
       if (w >= 1536) return 5;

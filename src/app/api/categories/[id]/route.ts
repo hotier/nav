@@ -100,10 +100,7 @@ export async function PUT(
     if (!isAdmin && "isPublic" in updateData) {
       delete updateData.isPublic;
     }
-    // 管理员设置 isPublic 为 true 时，清空 userId（公开分类不归属任何人）
-    if (isAdmin && updateData.isPublic === true) {
-      updateData.userId = null;
-    }
+    // 管理员设置 isPublic 为 true 时，保留原有 userId（记录创建人）
 
     const category = await prisma.category.update({
       where: { id },

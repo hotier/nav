@@ -63,12 +63,12 @@ export default function CategoriesPage() {
   // Category 数据
   const { data: cacheData, loading: _loading, syncing: _syncing, setData } = useDataCache({
     configs: [
-    { name: "Category:mgmt", fetch: () => fetch("/api/categories?scope=manage").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
+    { name: "Category:mgmt:v2", fetch: () => fetch("/api/categories?scope=manage").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
   ], userId: uid });
 
   // Link 数据 — 无限滚动加载
   const { items: allLinks, hasMore, isLoadingMore, sentinelRef, setItems: setLinkData } = useInfiniteScroll<LinkType>({
-    name: "Link:mgmt",
+    name: "Link:mgmt:v2",
     autoPageSize: true,
     userId: uid,
     fetchFn: (page, pageSize) =>
@@ -77,7 +77,7 @@ export default function CategoriesPage() {
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
 
-  const categories = (cacheData["Category:mgmt"] || []) as Category[];
+  const categories = (cacheData["Category:mgmt:v2"] || []) as Category[];
 
   const categoryLinks = useMemo(() => {
     const grouped: Record<string, LinkType[]> = {};
@@ -147,7 +147,7 @@ export default function CategoriesPage() {
     setCatVisibilityId(null);
     const prevCategories = [...categories];
     // 乐观更新
-    setData("Category:mgmt", (prev) =>
+    setData("Category:mgmt:v2", (prev) =>
       (prev as Category[]).map((c) =>
         c.id === categoryId ? { ...c, isPublic: targetPublic } : c
       )
@@ -161,7 +161,7 @@ export default function CategoriesPage() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setData("Category:mgmt", (prev) =>
+        setData("Category:mgmt:v2", (prev) =>
           (prev as Category[]).map((c) =>
             c.id === categoryId ? { ...c, isPublic: updated.isPublic } : c
           )
@@ -169,12 +169,12 @@ export default function CategoriesPage() {
         toast.success(updated.isPublic ? "已设为公开" : "已设为私有");
         refreshLinks();
       } else {
-        setData("Category:mgmt", () => prevCategories);
+        setData("Category:mgmt:v2", () => prevCategories);
         const err = await res.json();
         toast.error(err.error || "操作失败");
       }
     } catch {
-      setData("Category:mgmt", () => prevCategories);
+      setData("Category:mgmt:v2", () => prevCategories);
       toast.error("操作失败");
     } finally {
       setCategoryUpdating((prev) => ({ ...prev, [categoryId]: false }));
@@ -187,7 +187,7 @@ export default function CategoriesPage() {
       const res = await fetch("/api/categories?scope=manage");
       if (res.ok) {
         const data = await res.json();
-        setData("Category:mgmt", () => data);
+        setData("Category:mgmt:v2", () => data);
       }
     } catch { /* silent */ }
   };
@@ -270,7 +270,7 @@ export default function CategoriesPage() {
     const prevCategories = [...categories];
     const target = deleteTarget;
     // 乐观删除
-    setData("Category:mgmt", (prev) => (prev as Category[]).filter((c) => c.id !== target.id));
+    setData("Category:mgmt:v2", (prev) => (prev as Category[]).filter((c) => c.id !== target.id));
     setDeleteTarget(null);
 
     try {
@@ -283,12 +283,12 @@ export default function CategoriesPage() {
         refreshLinks();
       } else {
         // 回滚
-        setData("Category:mgmt", () => prevCategories);
+        setData("Category:mgmt:v2", () => prevCategories);
         const err = await response.json();
         toast.error(err.error || "删除失败");
       }
     } catch {
-      setData("Category:mgmt", () => prevCategories);
+      setData("Category:mgmt:v2", () => prevCategories);
       toast.error("删除失败");
     } finally {
       setIsDeleting(false);
@@ -445,6 +445,15 @@ export default function CategoriesPage() {
                 </>
               )}
             </span>
+          )}
+        </TableCell>
+        <TableCell>
+          {category.user ? (
+            <span className="text-muted-foreground truncate block max-w-[120px]" title={category.user.name || category.user.username || ""}>
+              {category.user.name || category.user.username || "未知"}
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400 dark:text-slate-500 italic">—</span>
           )}
         </TableCell>
         <TableCell className="text-right">
@@ -716,18 +725,19 @@ export default function CategoriesPage() {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead style={{ width: "16%" }}>名称</TableHead>
-                  <TableHead style={{ width: "8%" }}>类型</TableHead>
-                  <TableHead style={{ width: "38%" }}>具体链接</TableHead>
-                  <TableHead style={{ width: "8%" }} className="text-center">数量</TableHead>
+                  <TableHead style={{ width: "14%" }}>名称</TableHead>
+                  <TableHead style={{ width: "7%" }}>类型</TableHead>
+                  <TableHead style={{ width: "28%" }}>具体链接</TableHead>
+                  <TableHead style={{ width: "7%" }} className="text-center">数量</TableHead>
                   <TableHead style={{ width: "12%" }}>可见性</TableHead>
+                  <TableHead style={{ width: "14%" }}>创建人</TableHead>
                   <TableHead style={{ width: "18%" }} className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rootCategories.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       没有分类，创建一个开始吧
                     </TableCell>
                   </TableRow>

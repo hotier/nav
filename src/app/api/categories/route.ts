@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     // 使用 SWR 缓存，按 scope 区分缓存键
     const scopeKey = cacheScope(scope);
     const uid = userId || "anon";
-    const cacheKey = `categories:api:${scopeKey}:${uid}`;
+    const cacheKey = `categories:api:v2:${scopeKey}:${uid}`;
     const categories = await swr(cacheKey, () =>
       prisma.category.findMany({
         where: {
@@ -40,6 +40,7 @@ export async function GET(request: Request) {
           ],
         } as Record<string, unknown>,
         include: {
+          user: { select: { id: true, name: true, username: true, image: true } },
           children: {
             orderBy: { sortOrder: "asc" },
           },
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
         sortOrder: result.data.sortOrder ?? 0,
         slug,
         isPublic,
-        userId: isPublic ? null : session.user.id,
+        userId: session.user.id,
       },
     });
 

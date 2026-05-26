@@ -94,6 +94,8 @@ export async function POST(request: Request) {
         name: "默认分类",
         slug: generateSlug(),
         sortOrder: 0,
+        isPublic: true,
+        userId: user.id,
       },
     });
 

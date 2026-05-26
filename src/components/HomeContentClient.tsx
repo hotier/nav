@@ -7,11 +7,12 @@ import type { Link as LinkType, Category } from "@/types";
 import { Home, Loader2 } from "lucide-react";
 
 interface Props {
+  userId: string | null;
   linkCount: number;
   isAdmin: boolean;
 }
 
-export function HomeContentClient({ linkCount, isAdmin }: Props) {
+export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
   const { data: catData, loading: catLoading } = useDataCache({ configs: [
     {
       name: "Category",
@@ -20,10 +21,11 @@ export function HomeContentClient({ linkCount, isAdmin }: Props) {
           .then((r) => r.json())
           .then((d: Category[]) => ({ data: d, total: d.length })),
     },
-  ] });
+  ], userId });
 
   const { items: links, total, hasMore, isLoadingMore, loading: linksLoading, sentinelRef } = useInfiniteScroll<LinkType>({
     name: "Link",
+    userId,
     autoPageSize: { cardHeight: 140, columns: () => {
       const w = window.innerWidth;
       if (w >= 1536) return 5;  // 2xl

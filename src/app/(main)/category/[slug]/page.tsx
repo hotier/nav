@@ -11,6 +11,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
 
   return (
     <CategoryContentClient
+      userId={session?.user?.id ?? null}
       slug={slug}
       isAdmin={session?.user?.role === "admin"}
     />

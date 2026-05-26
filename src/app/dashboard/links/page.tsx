@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
-import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home, AlertTriangle, CheckSquare, MoveRight, Folders, X } from "lucide-react";
+import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home, AlertTriangle, CheckSquare, MoveRight, Folders, X, User } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { LinkForm } from "@/components/LinkForm";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -65,7 +64,7 @@ export default function LinksPage() {
   const { data: catData } = useDataCache({
     configs: [
     {
-      name: "Category:mgmt",
+      name: "Category:mgmt:v2",
       fetch: () =>
         fetch("/api/categories?scope=manage&forSelector=true")
           .then((r) => r.json())
@@ -83,7 +82,7 @@ export default function LinksPage() {
     sentinelRef,
     setItems: setData,
   } = useInfiniteScroll<LinkType>({
-    name: "Link:mgmt",
+    name: "Link:mgmt:v2",
     autoPageSize: true,
     userId: uid,
     fetchFn: (page, pageSize) =>
@@ -92,7 +91,19 @@ export default function LinksPage() {
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
 
-  const categories = (catData["Category:mgmt"] || []) as Category[];
+  const categories = (catData["Category:mgmt:v2"] || []) as Category[];
+
+  // 从链接中提取去重创建人列表
+  const uniqueCreators = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string }>();
+    links.forEach((link) => {
+      const u = link.user;
+      if (u && !seen.has(u.id)) {
+        seen.set(u.id, { id: u.id, name: u.name || u.username || "未知" });
+      }
+    });
+    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, "zh"));
+  }, [links]);
 
   // 根据最长分类名称 + 标签计算下拉菜单宽度
   // 名称 ~16px/中文字 + 标签 ~40px + icon + gap + check + padding ≈ 120
@@ -133,6 +144,7 @@ export default function LinksPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [accessFilter, setAccessFilter] = useState("all");
   const [connectivityFilter, setConnectivityFilter] = useState("all");
+  const [creatorFilter, setCreatorFilter] = useState("all");
 
   // 访问权限下拉菜单
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
@@ -178,6 +190,21 @@ export default function LinksPage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [connMenuOpen]);
+
+  // 创建人筛选下拉菜单
+  const [creatorMenuOpen, setCreatorMenuOpen] = useState(false);
+  const creatorBtnRef = useRef<HTMLButtonElement>(null);
+  const creatorMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!creatorMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (creatorMenuRef.current && !creatorMenuRef.current.contains(e.target as Node)) {
+        setCreatorMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [creatorMenuOpen]);
 
   // 逐行访问权限下拉
   const [linkAccessId, setLinkAccessId] = useState<string | null>(null);
@@ -628,7 +655,11 @@ export default function LinksPage() {
         connectivityFilter === "all" ||
         checkResults[link.id] === connectivityFilter;
 
-      return matchesSearch && matchesCategory && matchesAccess && matchesConnectivity;
+      // 创建人筛选
+      const matchesCreator =
+        creatorFilter === "all" || link.user?.id === creatorFilter;
+
+      return matchesSearch && matchesCategory && matchesAccess && matchesConnectivity && matchesCreator;
     })
     .sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -819,7 +850,7 @@ export default function LinksPage() {
               ) : (
                 <Lock className="h-3.5 w-3.5 text-amber-500" />
               )}
-              {accessFilter === "all" ? "全部" : accessFilter === "public" ? "公开" : "私有"}
+              {accessFilter === "all" ? "访问权限" : accessFilter === "public" ? "公开" : "私有"}
               <ChevronDown className="h-3 w-3 opacity-50" />
             </button>
             {accessMenuOpen && createPortal(
@@ -915,11 +946,65 @@ export default function LinksPage() {
               document.body
             )}
           </div>
+          {/* Creator Filter — 创建人筛选 */}
+          <div className="relative">
+            <button
+              ref={creatorBtnRef}
+              onClick={() => setCreatorMenuOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+            >
+              <User className="h-3.5 w-3.5 text-slate-400" />
+              {creatorFilter === "all"
+                ? "创建人"
+                : uniqueCreators.find((c) => c.id === creatorFilter)?.name || "创建人"}
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            </button>
+            {creatorMenuOpen && createPortal(
+              <div
+                ref={creatorMenuRef}
+                style={{
+                  position: "fixed",
+                  top: (creatorBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                  left: (creatorBtnRef.current?.getBoundingClientRect().left ?? 0) + (creatorBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
+                  transform: "translateX(-50%)",
+                  minWidth: "140px",
+                }}
+                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+              >
+                <button
+                  onClick={() => { setCreatorFilter("all"); setCreatorMenuOpen(false); }}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                    creatorFilter === "all" ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                  )}
+                >
+                  <User className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="flex-1 text-left">全部</span>
+                  {creatorFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                </button>
+                {uniqueCreators.map((creator) => (
+                  <button
+                    key={creator.id}
+                    onClick={() => { setCreatorFilter(creator.id); setCreatorMenuOpen(false); }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                      creatorFilter === creator.id ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                    )}
+                  >
+                    <User className="h-3.5 w-3.5 text-slate-500" />
+                    <span className="flex-1 text-left truncate">{creator.name}</span>
+                    {creatorFilter === creator.id && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+          </div>
         </div>
 
         {/* Links Table */}
         <div className="animate-fade-in-up delay-300">
-        <div className="action-card" style={{ "--accent-color": "#3b82f6" } as React.CSSProperties}>
+        <div className="action-card" style={{ "--accent-color": "#3b82f6", overflow: "visible" } as React.CSSProperties}>
           <div className="flex items-start gap-4 mb-4">
             <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Link2 className="h-6 w-6 text-blue-500" />
@@ -992,7 +1077,7 @@ export default function LinksPage() {
           )}
 
           <div className="overflow-visible">
-            <Table>
+            <table className="w-full caption-bottom text-sm">
               <TableHeader>
                 <TableRow>
                   {isSelectMode && (
@@ -1014,13 +1099,14 @@ export default function LinksPage() {
                   <TableHead>分类</TableHead>
                   <TableHead>访问权限</TableHead>
                   <TableHead>连通性</TableHead>
+                  <TableHead>创建人</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredLinks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isSelectMode ? 7 : 6} className="text-center py-8">
+                    <TableCell colSpan={isSelectMode ? 8 : 7} className="text-center py-8">
                       没有找到链接
                     </TableCell>
                   </TableRow>
@@ -1217,6 +1303,15 @@ export default function LinksPage() {
                           );
                         })()}
                       </TableCell>
+                      <TableCell>
+                        {link.user ? (
+                          <span className="text-muted-foreground truncate block max-w-[120px]" title={link.user.name || link.user.username || ""}>
+                            {link.user.name || link.user.username || "未知"}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 dark:text-slate-500 italic">-</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
@@ -1233,7 +1328,7 @@ export default function LinksPage() {
                   ))
                 )}
               </TableBody>
-            </Table>
+            </table>
           </div>
         </div>
         </div>
