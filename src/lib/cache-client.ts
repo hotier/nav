@@ -107,6 +107,107 @@ export function writePageCache<T>(
   }
 }
 
+// ==================== 跨页面变更广播 ====================
+//
+// 解决“已打开页面/多标签页数据不实时同步”的问题。
+// 任意页面完成一次数据写操作（增删改）后调用 notifyDataChanged(table)，
+// 同源的其他页面通过 BroadcastChannel（同标签页内跨路由）与 storage 事件
+// （跨标签页）监听该表变更，触发重新拉取，保证所有页面数据一致。
+
+let _channel: BroadcastChannel | null = null;
+let _channelName = "";
+const _subscribers = new Set<(table: string) => void>();
+
+/** 确保 BroadcastChannel 已初始化（仅浏览器环境，不跨 tab 时自动降级） */
+function ensureChannel(name: string): void {
+  if (_channel && _channelName === name) return;
+  closeChannel();
+  try {
+    _channel = new BroadcastChannel(name);
+    _channelName = name;
+    _channel.onmessage = (e: MessageEvent) => {
+      const table = (e.data as { table?: string } | undefined)?.table;
+      if (!table) return;
+      // 通知所有订阅者该表已变更
+      _subscribers.forEach((fn) => {
+        try {
+          fn(table);
+        } catch {
+          // ignore
+        }
+      });
+    };
+  } catch {
+    _channel = null;
+  }
+}
+
+function closeChannel(): void {
+  if (_channel) {
+    try {
+      _channel.close();
+    } catch {
+      // ignore
+    }
+  }
+  _channel = null;
+  _channelName = "";
+}
+
+/**
+ * 写操作成功后调用：把本地版本号同步为服务端最新版本。
+ * 这样当前页的广播回调检测到“版本一致”会跳过自动刷新，
+ * 而其他页面（本地版本旧）仍会重新拉取，避免当前页因自身操作被 reset 回第一页。
+ */
+export async function syncLocalVersion(table: string, userId?: string | null): Promise<void> {
+  const serverVer = await getServerVersion(table);
+  if (serverVer) {
+    setLocalVersion(table, serverVer, userId);
+  }
+}
+
+/** 通知同一源内的所有页面：某张表的数据已变更，需重新拉取 */
+export function notifyDataChanged(table: string): void {
+  try {
+    ensureChannel("nav-cache-sync");
+    if (_channel) {
+      _channel.postMessage({ type: "table-changed", table });
+    }
+  } catch {
+    // BroadcastChannel 不可用
+  }
+  // 兜底：storage 事件（BroadcastChannel 不支持时跨标签页用 localStorage 触发）
+  try {
+    localStorage.setItem("nav_cache_change", `${table}_${Date.now()}`);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 订阅“某表数据变更”通知。
+ * onChange(table) 会在对应表变更时被调用，由订阅方自行判断是否关心该表并重新拉取。
+ * 返回取消订阅函数。
+ */
+export function subscribeDataChanged(onChange: (table: string) => void): () => void {
+  _subscribers.add(onChange);
+
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === "nav_cache_change" && e.newValue) {
+      const table = e.newValue.split("_")[0] || "";
+      onChange(table);
+    }
+  };
+  window.addEventListener("storage", handleStorage);
+
+  ensureChannel("nav-cache-sync");
+
+  return () => {
+    _subscribers.delete(onChange);
+    window.removeEventListener("storage", handleStorage);
+  };
+}
+
 // ==================== 乐观更新辅助 ====================
 
 /**

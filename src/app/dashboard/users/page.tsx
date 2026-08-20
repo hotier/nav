@@ -5,6 +5,13 @@ import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { Users, Shield, Trash2, User, Loader2, AlertTriangle, ChevronDown, Check } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -152,13 +159,13 @@ export default function UsersPage() {
     return (
       <AdminLayout>
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-500/10 flex items-center justify-center mb-4">
-            <AlertTriangle className="h-8 w-8 text-red-500" />
+          <div className="w-16 h-16 rounded-2xl bg-danger-muted flex items-center justify-center mb-4">
+            <AlertTriangle className="h-8 w-8 text-danger" />
           </div>
-          <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
+          <h3 className="text-lg font-semibold text-foreground mb-2">
             无权限访问
           </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm">
+          <p className="text-sm text-muted-foreground max-w-sm">
             仅管理员可以访问用户管理功能
           </p>
         </div>
@@ -201,7 +208,7 @@ export default function UsersPage() {
           </div>
           <div className="stat-card p-4" style={{ "--icon-color": "#94a3b8" } as React.CSSProperties}>
             <div className="flex items-center gap-2 mb-1">
-              <User className="h-3.5 w-3.5 text-slate-400" />
+              <User className="h-3.5 w-3.5 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">普通用户</p>
             </div>
             <p className="text-3xl font-bold mb-1 tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>{userCount}</p>
@@ -211,20 +218,18 @@ export default function UsersPage() {
         {/* User Table */}
         {loading && users.length === 0 ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : users.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-              <Users className="h-8 w-8 text-slate-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">
-              暂无用户
-            </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              用户注册后将在此处显示
-            </p>
-          </div>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Users className="size-5" />
+              </EmptyMedia>
+              <EmptyTitle>暂无用户</EmptyTitle>
+              <EmptyDescription>用户注册后将在此处显示</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="animate-fade-in-up delay-300">
           <div className="action-card" style={{ "--accent-color": "#8b5cf6" } as React.CSSProperties}>
@@ -239,10 +244,10 @@ export default function UsersPage() {
                 </p>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-200 dark:border-slate-700/60 overflow-hidden bg-white dark:bg-slate-900/50">
+            <div className="rounded-xl border border-border overflow-hidden bg-card">
             <Table>
               <TableHeader>
-                <TableRow className="hover:bg-transparent border-b border-slate-200 dark:border-slate-700/60">
+                <TableRow className="hover:bg-transparent border-b border-border">
                   <TableHead className="w-12">#</TableHead>
                   <TableHead>用户</TableHead>
                   <TableHead>用户名</TableHead>
@@ -263,9 +268,9 @@ export default function UsersPage() {
                   return (
                   <TableRow
                     key={user.id}
-                    className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    className="border-b border-border hover:bg-muted/50 transition-colors"
                   >
-                    <TableCell className="text-sm text-slate-400 font-mono w-12">
+                    <TableCell className="text-sm text-muted-foreground font-mono w-12">
                       {index + 1}
                     </TableCell>
                     <TableCell>
@@ -277,15 +282,15 @@ export default function UsersPage() {
                               alt=""
                               className={cn(
                                 "h-9 w-9 rounded-full object-cover",
-                                user.role !== "admin" && "ring-2 ring-slate-100 dark:ring-slate-700"
+                                user.role !== "admin" && "ring-2 ring-muted"
                               )}
                             />
                           ) : (
                             <div className={cn(
                               "h-9 w-9 rounded-full flex items-center justify-center text-xs font-semibold",
                               user.role === "admin"
-                                ? "bg-gradient-to-br from-blue-500 to-sky-500 text-white"
-                                : "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300"
+                                ? "bg-gradient-to-br from-primary to-sky-500 text-white"
+                                : "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground"
                             )}>
                               {initials}
                             </div>
@@ -293,7 +298,7 @@ export default function UsersPage() {
                           {user.role === "admin" && <span className="admin-avatar-badge">管</span>}
                         </div>
                         <div>
-                          <span className="font-medium text-sm text-slate-800 dark:text-white">
+                          <span className="font-medium text-sm text-foreground">
                             {user.name || "未设置"}
                           </span>
                           {isMe && (
@@ -304,10 +309,10 @@ export default function UsersPage() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-slate-600 dark:text-slate-400 font-mono">
+                    <TableCell className="text-sm text-muted-foreground font-mono">
                       {user.username || "-"}
                     </TableCell>
-                    <TableCell className="text-sm text-slate-600 dark:text-slate-400 max-w-[180px] truncate">
+                    <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">
                       {user.email || "-"}
                     </TableCell>
                     <TableCell className="text-center">
@@ -328,7 +333,7 @@ export default function UsersPage() {
                             "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer",
                             user.role === "admin"
                               ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200 hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20 dark:hover:bg-violet-500/20"
-                              : "bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700"
+                              : "bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent"
                           )}
                         >
                           {roleUpdating[user.id] ? (
@@ -350,7 +355,7 @@ export default function UsersPage() {
                               left: menuPosition.left,
                               transform: "translateX(-50%)",
                             }}
-                            className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                            className="z-[9999] min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
                           >
                             {(["admin", "user"] as const).map((r) => (
                               <button
@@ -358,16 +363,16 @@ export default function UsersPage() {
                                 onClick={() => handleRoleSelect(user.id, user.role, r)}
                                 disabled={roleUpdating[user.id]}
                                 className={cn(
-                                  "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                                  "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
                                   r === user.role
-                                    ? "text-slate-900 dark:text-white font-medium"
-                                    : "text-slate-600 dark:text-slate-400"
+                                    ? "text-foreground font-medium"
+                                    : "text-muted-foreground"
                                 )}
                               >
                                 {r === "admin" ? (
                                   <Shield className="h-3.5 w-3.5 text-violet-500" />
                                 ) : (
-                                  <User className="h-3.5 w-3.5 text-slate-400" />
+                                  <User className="h-3.5 w-3.5 text-muted-foreground" />
                                 )}
                                 <span className="flex-1 text-left">
                                   {r === "admin" ? "管理员" : "普通用户"}
@@ -387,12 +392,12 @@ export default function UsersPage() {
                         "inline-flex items-center justify-center min-w-[1.5rem] h-6 px-1.5 rounded-md text-xs font-medium",
                         user._count.links > 0
                           ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300"
-                          : "text-slate-400 dark:text-slate-500"
+                          : "text-muted-foreground"
                       )}>
                         {user._count.links}
                       </span>
                     </TableCell>
-                    <TableCell className="text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {new Date(user.createdAt).toLocaleDateString("zh-CN", {
                         year: "numeric",
                         month: "2-digit",
@@ -405,7 +410,7 @@ export default function UsersPage() {
                         size="sm"
                         onClick={() => setDeleteTarget(user)}
                         title="删除用户"
-                        className="h-8 px-2 rounded-lg text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10 transition-colors"
+                        className="h-8 px-2 rounded-lg text-xs font-medium text-danger hover:text-danger hover:bg-danger/10 transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -432,14 +437,14 @@ export default function UsersPage() {
             <DialogDescription className="pt-2">
               <p>
                 确定要将用户{" "}
-                <strong className="text-slate-800 dark:text-slate-200">
+                <strong className="text-foreground">
                   {roleChangeTarget?.name}
                 </strong>
                 {" "}的角色更改为{" "}
                 <strong className={cn(
                   roleChangeTarget?.newRole === "admin"
                     ? "text-violet-600 dark:text-violet-400"
-                    : "text-slate-600 dark:text-slate-400"
+                    : "text-muted-foreground"
                 )}>
                   {roleChangeTarget?.newRole === "admin" ? "管理员" : "普通用户"}
                 </strong>
@@ -482,12 +487,12 @@ export default function UsersPage() {
             <DialogDescription className="pt-2">
               <p>
                 确定要删除用户{" "}
-                <strong className="text-slate-800 dark:text-slate-200">
+                <strong className="text-foreground">
                   {deleteTarget?.name || deleteTarget?.username || "未知"}
                 </strong>
                 {" "}吗？
               </p>
-              <p className="mt-2 text-red-500 dark:text-red-400 text-sm">
+              <p className="mt-2 text-danger text-sm">
                 此操作不可撤销，该用户的所有书签将被同时删除。
               </p>
             </DialogDescription>

@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { createLinkSchema } from "@/lib/validators";
 import { invalidateLinks, incrementTableVersion } from "@/lib/queries";
 import { swr } from "@/lib/cache";
-import { buildLinkWhere, canAddLinkToCategory, cacheScope, type LinkViewScope } from "@/lib/permissions";
+import { buildLinkWhere, canAddLinkToCategory, type LinkViewScope } from "@/lib/permissions";
 import { cleanUrl } from "@/lib/recognize-url";
+import { linkListKey } from "@/lib/cache-keys";
 
 export async function GET(request: Request) {
   try {
@@ -29,13 +30,11 @@ export async function GET(request: Request) {
 
     // 排序规则：置顶始终优先，二序按 sort 参数切换
     const orderBy: Record<string, string>[] = sort === "recent"
-      ? [{ isPinned: "desc" }, { createdAt: "asc" }]
+      ? [{ isPinned: "desc" }, { createdAt: "desc" }]
       : [{ isPinned: "desc" }, { sortOrder: "asc" }];
 
-    // SWR 缓存 — 按 scope 区分缓存键，数据+总数一同缓存避免独立 count 查询
-    const uid = userId || "anon";
-    const scopeKey = cacheScope(scope);
-    const cacheKey = `links:api:v2:${scopeKey}:${uid}:${categoryId || "all"}:p${page}:${sort}`;
+    // SWR 缓存 — 按 scope/用户/分类/分页/排序区分缓存键（结构化，失效对称）
+    const cacheKey = linkListKey(userId, scope, categoryId, page, sort);
     const { data: links, total } = await swr(cacheKey, async () => {
       const [data, total] = await Promise.all([
         prisma.link.findMany({

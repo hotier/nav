@@ -5,6 +5,13 @@ import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home, AlertTriangle, CheckSquare, MoveRight, Folders, X, User } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -37,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/components/DynamicIcon";
 import type { Link as LinkType, Category } from "@/types";
 import {
+  notifyDataChanged,
   readPageCache,
   writePageCache,
 } from "@/lib/cache-client";
@@ -65,6 +73,7 @@ export default function LinksPage() {
     configs: [
     {
       name: "Category:mgmt:v2",
+      versionTable: "Category",
       fetch: () =>
         fetch("/api/categories?scope=manage&forSelector=true")
           .then((r) => r.json())
@@ -83,6 +92,7 @@ export default function LinksPage() {
     setItems: setData,
   } = useInfiniteScroll<LinkType>({
     name: "Link:mgmt:v2",
+    versionTable: "Link",
     autoPageSize: true,
     userId: uid,
     fetchFn: (page, pageSize) =>
@@ -265,6 +275,7 @@ export default function LinksPage() {
           )
         );
         toast.success("分类已更新");
+        notifyDataChanged("Link");
       } else {
         setData( () => prevLinks);
         const err = await res.json();
@@ -299,6 +310,7 @@ export default function LinksPage() {
           prev.map((l) => (l as LinkType).id === linkId ? { ...(l as LinkType), isPrivate: updated.isPrivate } : l)
         );
         toast.success(updated.isPrivate ? "已设为私有" : "已设为公开");
+        notifyDataChanged("Link");
       } else {
         setData( () => prevLinks);
         const err = await res.json();
@@ -394,6 +406,7 @@ export default function LinksPage() {
           toast.success("链接更新成功");
           resetDialog();
           handleCheckSingle(savedLink.id, savedLink.url);
+          notifyDataChanged("Link");
         } else {
           throw new Error((await response.json()).error || "更新失败");
         }
@@ -456,6 +469,7 @@ export default function LinksPage() {
         toast.success("链接创建成功");
         resetDialog();
         handleCheckSingle(savedLink.id, savedLink.url);
+        notifyDataChanged("Link");
       } else {
         throw new Error((await response.json()).error || "创建失败");
       }
@@ -532,6 +546,7 @@ export default function LinksPage() {
       toast.error(`${failed} 个链接移动失败，已回滚`);
     } else {
       toast.success(`已将 ${ids.length} 个链接移动到目标分类`);
+      notifyDataChanged("Link");
     }
 
     setSelectedIds(new Set());
@@ -565,6 +580,7 @@ export default function LinksPage() {
       toast.error(`${failed} 个链接删除失败，已回滚`);
     } else {
       toast.success(`已删除 ${ids.length} 个链接`);
+      notifyDataChanged("Link");
     }
 
     setSelectedIds(new Set());
@@ -778,15 +794,15 @@ export default function LinksPage() {
           {/* Stats Cards */}
           <div className="hidden md:flex items-center gap-3 animate-fade-in-up delay-200">
             <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-blue-500" />
+              <Link2 className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">{stats.totalLinks} 个链接</span>
             </div>
             <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
-              <Globe className="h-4 w-4 text-emerald-500" />
+              <Globe className="h-4 w-4 text-success" />
               <span className="text-sm font-medium">{stats.publicLinks} 公开</span>
             </div>
             <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
-              <Lock className="h-4 w-4 text-amber-500" />
+              <Lock className="h-4 w-4 text-warning" />
               <span className="text-sm font-medium">{stats.privateLinks} 私有</span>
             </div>
           </div>
@@ -863,12 +879,12 @@ export default function LinksPage() {
             <button
               ref={catBtnRef}
               onClick={() => setCatMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
             >
               {categoryFilter === "all" ? (
-                <Home className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                <Home className="h-3.5 w-3.5 text-muted-foreground" />
               ) : (
-                <DynamicIcon name={categories.find((c) => c.id === categoryFilter)?.icon || "Folder"} className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                <DynamicIcon name={categories.find((c) => c.id === categoryFilter)?.icon || "Folder"} className="h-3.5 w-3.5 text-muted-foreground" />
               )}
               {categoryFilter === "all" ? "全部分类" : (categories.find((c) => c.id === categoryFilter)?.name || "分类")}
               <ChevronDown className="h-3 w-3 opacity-50" />
@@ -883,16 +899,16 @@ export default function LinksPage() {
                   transform: "translateX(-50%)",
                   minWidth: `${categoryDropdownMinW}px`,
                 }}
-                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
               >
                 <button
                   onClick={() => { setCategoryFilter("all"); setCatMenuOpen(false); }}
                   className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
-                    categoryFilter === "all" ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
+                    categoryFilter === "all" ? "text-foreground font-medium" : "text-muted-foreground"
                   )}
                 >
-                  <Home className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                  <Home className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="flex-1 text-left">全部分类</span>
                   {categoryFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
                 </button>
@@ -901,19 +917,19 @@ export default function LinksPage() {
                     key={c.id}
                     onClick={() => { setCategoryFilter(c.id); setCatMenuOpen(false); }}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
-                      categoryFilter === c.id ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
+                      categoryFilter === c.id ? "text-foreground font-medium" : "text-muted-foreground"
                     )}
                   >
-                    <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                    <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="flex-1 text-left truncate">{c.name}</span>
                     {c.isPublic ? (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 flex-shrink-0">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-success-muted text-success-muted-foreground flex-shrink-0">
                         <Globe className="h-2.5 w-2.5" />
                         公开
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 flex-shrink-0">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-warning-muted text-warning-muted-foreground flex-shrink-0">
                         <Lock className="h-2.5 w-2.5" />
                         私有
                       </span>
@@ -932,14 +948,14 @@ export default function LinksPage() {
             <button
               ref={accessBtnRef}
               onClick={() => setAccessMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
             >
               {accessFilter === "all" ? (
-                <Globe className="h-3.5 w-3.5 text-slate-400" />
+                <Globe className="h-3.5 w-3.5 text-muted-foreground" />
               ) : accessFilter === "public" ? (
-                <Globe className="h-3.5 w-3.5 text-emerald-500" />
+                <Globe className="h-3.5 w-3.5 text-success" />
               ) : (
-                <Lock className="h-3.5 w-3.5 text-amber-500" />
+                <Lock className="h-3.5 w-3.5 text-warning" />
               )}
               {accessFilter === "all" ? "访问权限" : accessFilter === "public" ? "公开" : "私有"}
               <ChevronDown className="h-3 w-3 opacity-50" />
@@ -953,12 +969,12 @@ export default function LinksPage() {
                   left: (accessBtnRef.current?.getBoundingClientRect().left ?? 0) + (accessBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
                   transform: "translateX(-50%)",
                 }}
-                className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                className="z-[9999] min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
               >
                 {([
-                  { value: "all", label: "全部", Icon: Globe, color: "text-slate-400" },
-                  { value: "public", label: "公开", Icon: Globe, color: "text-emerald-500" },
-                  { value: "private", label: "私有", Icon: Lock, color: "text-amber-500" },
+                  { value: "all", label: "全部", Icon: Globe, color: "text-muted-foreground" },
+                  { value: "public", label: "公开", Icon: Globe, color: "text-success" },
+                  { value: "private", label: "私有", Icon: Lock, color: "text-warning" },
                 ] as const).map(({ value, label, Icon, color }) => (
                   <button
                     key={value}
@@ -967,10 +983,10 @@ export default function LinksPage() {
                       setAccessMenuOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
                       accessFilter === value
-                        ? "text-slate-900 dark:text-white font-medium"
-                        : "text-slate-600 dark:text-slate-400"
+                        ? "text-foreground font-medium"
+                        : "text-muted-foreground"
                     )}
                   >
                     <Icon className={cn("h-3.5 w-3.5", color)} />
@@ -989,16 +1005,16 @@ export default function LinksPage() {
             <button
               ref={connBtnRef}
               onClick={() => setConnMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
             >
               {connectivityFilter === "active" ? (
-                <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+                <CheckCircle className="h-3.5 w-3.5 text-success" />
               ) : connectivityFilter === "timeout" ? (
-                <XCircle className="h-3.5 w-3.5 text-amber-500" />
+                <XCircle className="h-3.5 w-3.5 text-warning" />
               ) : connectivityFilter === "dead" ? (
-                <XCircle className="h-3.5 w-3.5 text-red-500" />
+                <XCircle className="h-3.5 w-3.5 text-danger" />
               ) : (
-                <RefreshCw className="h-3.5 w-3.5 text-slate-400" />
+                <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
               )}
               {connectivityFilter === "active" ? "有效" : connectivityFilter === "timeout" ? "超时" : connectivityFilter === "dead" ? "不可达" : "连通性"}
               <ChevronDown className="h-3 w-3 opacity-50" />
@@ -1012,20 +1028,20 @@ export default function LinksPage() {
                   left: (connBtnRef.current?.getBoundingClientRect().left ?? 0) + (connBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
                   transform: "translateX(-50%)",
                 }}
-                className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                className="z-[9999] min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
               >
                 {([
-                  { value: "all", label: "全部", Icon: RefreshCw, color: "text-slate-400" },
-                  { value: "active", label: "有效", Icon: CheckCircle, color: "text-emerald-500" },
-                  { value: "timeout", label: "超时", Icon: XCircle, color: "text-amber-500" },
-                  { value: "dead", label: "不可达", Icon: XCircle, color: "text-red-500" },
+                  { value: "all", label: "全部", Icon: RefreshCw, color: "text-muted-foreground" },
+                  { value: "active", label: "有效", Icon: CheckCircle, color: "text-success" },
+                  { value: "timeout", label: "超时", Icon: XCircle, color: "text-warning" },
+                  { value: "dead", label: "不可达", Icon: XCircle, color: "text-danger" },
                 ] as const).map(({ value, label, Icon, color }) => (
                   <button
                     key={value}
                     onClick={() => { setConnectivityFilter(value); setConnMenuOpen(false); }}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
-                      connectivityFilter === value ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
+                      connectivityFilter === value ? "text-foreground font-medium" : "text-muted-foreground"
                     )}
                   >
                     <Icon className={cn("h-3.5 w-3.5", color)} />
@@ -1042,9 +1058,9 @@ export default function LinksPage() {
             <button
               ref={creatorBtnRef}
               onClick={() => setCreatorMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
             >
-              <User className="h-3.5 w-3.5 text-slate-400" />
+              <User className="h-3.5 w-3.5 text-muted-foreground" />
               {creatorFilter === "all"
                 ? "创建人"
                 : uniqueCreators.find((c) => c.id === creatorFilter)?.name || "创建人"}
@@ -1060,16 +1076,16 @@ export default function LinksPage() {
                   transform: "translateX(-50%)",
                   minWidth: "140px",
                 }}
-                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
               >
                 <button
                   onClick={() => { setCreatorFilter("all"); setCreatorMenuOpen(false); }}
                   className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
-                    creatorFilter === "all" ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
+                    creatorFilter === "all" ? "text-foreground font-medium" : "text-muted-foreground"
                   )}
                 >
-                  <User className="h-3.5 w-3.5 text-slate-400" />
+                  <User className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="flex-1 text-left">全部</span>
                   {creatorFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
                 </button>
@@ -1078,11 +1094,11 @@ export default function LinksPage() {
                     key={creator.id}
                     onClick={() => { setCreatorFilter(creator.id); setCreatorMenuOpen(false); }}
                     className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
-                      creatorFilter === creator.id ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
+                      creatorFilter === creator.id ? "text-foreground font-medium" : "text-muted-foreground"
                     )}
                   >
-                    <User className="h-3.5 w-3.5 text-slate-500" />
+                    <User className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="flex-1 text-left truncate">{creator.name}</span>
                     {creatorFilter === creator.id && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
                   </button>
@@ -1097,8 +1113,8 @@ export default function LinksPage() {
         <div className="animate-fade-in-up delay-300">
         <div className="action-card" style={{ "--accent-color": "#3b82f6", overflow: "visible" } as React.CSSProperties}>
           <div className="flex items-start gap-4 mb-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Link2 className="h-6 w-6 text-blue-500" />
+            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Link2 className="h-6 w-6 text-primary" />
             </div>
             <div className="flex-1">
               <h3 className="font-semibold mb-1" style={{ fontFamily: "var(--font-space-grotesk)" }}>链接列表</h3>
@@ -1162,7 +1178,7 @@ export default function LinksPage() {
             </div>
           )}
           {isSelectMode && selectedIds.size === 0 && (
-            <div className="mb-3 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-500/10 border border-slate-200 dark:border-slate-500/30 flex items-center gap-3">
+            <div className="mb-3 px-3 py-2 rounded-lg bg-muted dark:bg-muted border border-border flex items-center gap-3">
               <span className="text-sm text-muted-foreground">请勾选需要操作的链接</span>
             </div>
           )}
@@ -1197,8 +1213,16 @@ export default function LinksPage() {
               <TableBody>
                 {filteredLinks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isSelectMode ? 8 : 7} className="text-center py-8">
-                      没有找到链接
+                    <TableCell colSpan={isSelectMode ? 8 : 7} className="py-8">
+                      <Empty>
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon">
+                            <Link2 className="size-5" />
+                          </EmptyMedia>
+                          <EmptyTitle>没有找到链接</EmptyTitle>
+                          <EmptyDescription>试试调整搜索或筛选条件</EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -1237,12 +1261,12 @@ export default function LinksPage() {
                               setLinkCategoryId(linkCategoryId === link.id ? null : link.id);
                             }}
                             disabled={categoryUpdating[link.id]}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1 bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600 dark:hover:bg-slate-700"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1 bg-muted text-muted-foreground ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent"
                           >
                             {categoryUpdating[link.id] ? (
-                              <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                             ) : (
-                              <DynamicIcon name={link.category?.icon || "Folder"} className="h-3 w-3 text-slate-500" />
+                              <DynamicIcon name={link.category?.icon || "Folder"} className="h-3 w-3 text-muted-foreground" />
                             )}
                             {link.category?.name || "未分类"}
                             <ChevronDown className="h-3 w-3 opacity-50" />
@@ -1250,7 +1274,7 @@ export default function LinksPage() {
                           {linkCategoryId === link.id && (
                             <div
                               ref={linkCategoryMenuRef}
-                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 max-h-[240px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
                               style={{ minWidth: `${categoryDropdownMinW}px` }}
                             >
                               {categories.map((c) => (
@@ -1259,13 +1283,13 @@ export default function LinksPage() {
                                   onClick={() => handleChangeCategory(link.id, c.id)}
                                   disabled={categoryUpdating[link.id]}
                                   className={cn(
-                                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
                                     link.categoryId === c.id
-                                      ? "text-slate-900 dark:text-white font-medium"
-                                      : "text-slate-600 dark:text-slate-400"
+                                      ? "text-foreground font-medium"
+                                      : "text-muted-foreground"
                                   )}
                                 >
-                                  <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-slate-500" />
+                                  <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-muted-foreground" />
                                   <span className="flex-1 text-left truncate">{c.name}</span>
                                   {c.isPublic ? (
                                     <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 flex-shrink-0">
@@ -1273,7 +1297,7 @@ export default function LinksPage() {
                                       公开
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 flex-shrink-0">
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-warning-muted text-warning-muted-foreground flex-shrink-0">
                                       <Lock className="h-2.5 w-2.5" />
                                       私有
                                     </span>
@@ -1297,16 +1321,16 @@ export default function LinksPage() {
                             className={cn(
                               "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1",
                               link.isPrivate
-                                ? "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20 dark:hover:bg-amber-500/20"
-                                : "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20 dark:hover:bg-emerald-500/20"
+                                ? "bg-warning-muted text-warning-muted-foreground ring-warning/20 hover:bg-warning-muted/60"
+                                : "bg-success-muted text-success-muted-foreground ring-success/20 hover:bg-success-muted/60"
                             )}
                           >
                             {linkUpdating[link.id] ? (
-                              <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+                              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                             ) : link.isPrivate ? (
-                              <Lock className="h-3 w-3 text-amber-500" />
+                              <Lock className="h-3 w-3 text-warning" />
                             ) : (
-                              <Globe className="h-3 w-3 text-emerald-500" />
+                              <Globe className="h-3 w-3 text-success" />
                             )}
                             {link.isPrivate ? "私有" : "公开"}
                             <ChevronDown className="h-3 w-3 opacity-50" />
@@ -1314,19 +1338,19 @@ export default function LinksPage() {
                           {linkAccessId === link.id && (
                             <div
                               ref={linkAccessMenuRef}
-                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
                             >
                               {([
-                                { value: false, label: "公开", Icon: Globe, color: "text-emerald-500" },
-                                { value: true, label: "私有", Icon: Lock, color: "text-amber-500" },
+                                { value: false, label: "公开", Icon: Globe, color: "text-success" },
+                                { value: true, label: "私有", Icon: Lock, color: "text-warning" },
                               ] as const).map(({ value, label, Icon, color }) => (
                                 <button
                                   key={String(value)}
                                   onClick={() => handleToggleAccess(link.id, link.isPrivate)}
                                   disabled={linkUpdating[link.id]}
                                   className={cn(
-                                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
-                                    link.isPrivate === value ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
+                                    link.isPrivate === value ? "text-foreground font-medium" : "text-muted-foreground"
                                   )}
                                 >
                                   <Icon className={cn("h-3.5 w-3.5", color)} />
@@ -1345,7 +1369,7 @@ export default function LinksPage() {
 
                           if (checking) {
                             return (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground">
                                 <RefreshCw className="h-3 w-3" /> 检测中
                               </span>
                             );
@@ -1358,7 +1382,7 @@ export default function LinksPage() {
                                   e.stopPropagation();
                                   handleCheckSingle(link.id, link.url);
                                 }}
-                                className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/20 transition-colors cursor-pointer"
+                                className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 text-muted-foreground hover:text-primary dark:hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors cursor-pointer"
                               >
                                 <RefreshCw className="h-3 w-3" /> 检测
                               </button>
@@ -1367,15 +1391,15 @@ export default function LinksPage() {
 
                           const badge =
                             s === "active" ? (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-success-muted text-success-muted-foreground">
                                 <CheckCircle className="h-3 w-3" /> 有效
                               </span>
                             ) : s === "timeout" ? (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-warning-muted text-warning-muted-foreground">
                                 <XCircle className="h-3 w-3" /> 超时
                               </span>
                             ) : (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-danger-muted text-danger-muted-foreground">
                                 <XCircle className="h-3 w-3" /> 不可达
                               </span>
                             );
@@ -1400,7 +1424,7 @@ export default function LinksPage() {
                             {link.user.name || link.user.username || "未知"}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400 dark:text-slate-500 italic">-</span>
+                          <span className="text-xs text-muted-foreground italic">-</span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
@@ -1440,18 +1464,18 @@ export default function LinksPage() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-red-500" />
+                  <AlertTriangle className="h-5 w-5 text-danger" />
                   批量删除
                 </DialogTitle>
                 <DialogDescription className="pt-2">
                   <p>
                     确定要删除已选中的{" "}
-                    <strong className="text-slate-800 dark:text-slate-200">
+                    <strong className="text-foreground">
                       {selectedIds.size} 个
                     </strong>{" "}
                     链接吗？
                   </p>
-                  <p className="mt-2 text-red-500 dark:text-red-400 text-sm">
+                  <p className="mt-2 text-danger text-sm">
                     此操作不可撤销。
                   </p>
                 </DialogDescription>
@@ -1488,7 +1512,7 @@ export default function LinksPage() {
                 <DialogDescription className="pt-2">
                   <p>
                     将已选中的{" "}
-                    <strong className="text-slate-800 dark:text-slate-200">
+                    <strong className="text-foreground">
                       {selectedIds.size} 个
                     </strong>{" "}
                     链接移动到指定分类

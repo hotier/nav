@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  notifyDataChanged,
   optimisticAddToCache,
   rollbackCache,
 } from "@/lib/cache-client";
@@ -156,6 +157,8 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
       });
 
       if (response.ok) {
+        // 广播数据变更，让所有已打开的链接页面实时刷新
+        notifyDataChanged("Link");
         toast.success("链接添加成功");
       } else {
         // 回滚缓存
@@ -172,18 +175,18 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 transition-colors duration-500">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-muted/40 via-background to-primary/5 dark:from-background dark:via-background dark:to-background transition-colors duration-500">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-2xl border-b border-slate-200/50 dark:bg-slate-800/80 dark:border-slate-700/50 transition-colors duration-300">
+      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-2xl border-b border-border transition-colors duration-300">
         <div className="w-full px-6">
           <div className="flex items-center justify-between h-16">
             {/* Left - Logo */}
             <div className="flex items-center">
               <Link href="/" className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-sky-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-sky-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-primary/20">
                   <span className="text-white font-bold text-xs" style={{ fontFamily: "var(--font-space-grotesk)" }}>ON</span>
                 </div>
-                <span className="font-bold text-lg text-slate-800 dark:text-white" style={{ fontFamily: "var(--font-space-grotesk)" }}>OneNav</span>
+                <span className="font-bold text-lg text-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>OneNav</span>
               </Link>
             </div>
 
@@ -201,10 +204,10 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                     }
                   }}
                   placeholder="搜索书签… (按 / 快速聚焦)"
-                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50/80 text-slate-800 dark:bg-slate-700/50 dark:border-slate-600/50 dark:text-white dark:placeholder-slate-400 focus:bg-white dark:focus:bg-slate-700/80 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-sm"
+                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-muted/80 text-foreground dark:bg-muted/50 dark:border-border dark:placeholder-muted-foreground focus:bg-background dark:focus:bg-muted/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-sm"
                 />
                 <svg
-                  className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -222,7 +225,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                 <div ref={avatarRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleAvatarClick}>
                   <div className={cn(session?.user?.role === "admin" && "admin-avatar-ring")}>
                     <button
-                      className="flex items-center justify-center w-9 h-9 rounded-full font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden cursor-pointer bg-gradient-to-br from-blue-500 to-sky-500 text-white"
+                      className="flex items-center justify-center w-9 h-9 rounded-full font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden cursor-pointer bg-gradient-to-br from-primary to-sky-500 text-white"
                       title="用户菜单"
                     >
                       {session?.user?.image ? (
@@ -235,15 +238,15 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                   </div>
                   {/* Dropdown */}
                   {userMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-40 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-50">
-                      <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">
-                        <p className="text-sm font-medium text-slate-800 dark:text-white truncate">
+                    <div className="absolute right-0 top-full mt-2 w-40 bg-card dark:bg-card rounded-xl shadow-xl border border-border py-1 z-50">
+                      <div className="px-3 py-2 border-b border-border">
+                        <p className="text-sm font-medium text-foreground truncate">
                           {session?.user?.name || "用户"}
                         </p>
                       </div>
                       <Link
                         href="/dashboard"
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
                         onClick={() => { setUserMenuOpen(false); setMenuPinned(false); }}
                       >
                         <LayoutDashboard className="h-4 w-4" />
@@ -251,7 +254,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                       </Link>
                       <Link
                         href="/dashboard/account"
-                        className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
                         onClick={() => { setUserMenuOpen(false); setMenuPinned(false); }}
                       >
                         <User className="h-4 w-4" />
@@ -259,7 +262,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                       </Link>
                       <button
                         onClick={() => { signOut(); setUserMenuOpen(false); setMenuPinned(false); }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger/10"
                       >
                         <LogOut className="h-4 w-4" />
                         退出登录
@@ -269,7 +272,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                 </div>
               ) : (
                 <Link href="/login">
-                  <Button size="sm" className="bg-gradient-to-r from-blue-500 to-sky-500 hover:from-blue-600 hover:to-sky-600 shadow-lg shadow-blue-500/25 text-white">登录</Button>
+                  <Button size="sm" className="shadow-lg shadow-primary/25 text-primary-foreground">登录</Button>
                 </Link>
               )}
 
@@ -288,10 +291,10 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
 
       {/* Main Content */}
       <div className="flex flex-1">
-        {/* Sidebar - always visible on left side */}
-        <aside className="w-60 flex-shrink-0 hidden lg:block bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border-r border-slate-200/50 dark:border-slate-700/50 p-4">
-          <div className="sticky top-6">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+        {/* Sidebar - fixed below header */}
+        <aside className="w-60 flex-shrink-0 hidden lg:block bg-card/60 dark:bg-card/60 backdrop-blur-xl border-r border-border p-4 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto">
+          <div>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2" style={{ fontFamily: "var(--font-space-grotesk)" }}>
               分类导航
             </h3>
             <nav className="space-y-1">
@@ -300,8 +303,8 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
                   pathname === "/"
-                    ? "bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md shadow-blue-500/20"
-                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60"
+                    ? "bg-gradient-to-r from-primary to-sky-500 text-primary-foreground shadow-md shadow-primary/20"
+                    : "text-muted-foreground hover:bg-muted dark:hover:bg-muted"
                 )}
               >
                 <Home className="h-4 w-4" />
@@ -315,8 +318,8 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                     className={cn(
                       "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
                       pathname === `/category/${category.slug}`
-                        ? "bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md shadow-blue-500/20"
-                        : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60"
+                        ? "bg-gradient-to-r from-primary to-sky-500 text-primary-foreground shadow-md shadow-primary/20"
+                        : "text-muted-foreground hover:bg-muted dark:hover:bg-muted"
                     )}
                   >
                     <DynamicIcon name={category.icon || "Folder"} className="h-4 w-4" />
@@ -331,8 +334,8 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                           className={cn(
                             "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all duration-200",
                             pathname === `/category/${child.slug}`
-                              ? "bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md shadow-blue-500/20"
-                              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60"
+                              ? "bg-gradient-to-r from-primary to-sky-500 text-primary-foreground shadow-md shadow-primary/20"
+                              : "text-muted-foreground hover:bg-muted dark:hover:bg-muted"
                           )}
                         >
                           <DynamicIcon name={child.icon || "Folder"} className="h-3 w-3" />
@@ -358,9 +361,9 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
       {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 lg:hidden">
-          <div className="absolute right-0 top-0 h-full w-64 bg-white dark:bg-slate-800 shadow-xl overflow-y-auto">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-              <span className="font-bold text-[#3498db]">菜单</span>
+          <div className="absolute right-0 top-0 h-full w-64 bg-card dark:bg-card shadow-xl overflow-y-auto">
+          <div className="p-4 border-b border-border flex items-center justify-between">
+            <span className="font-bold text-primary">菜单</span>
               <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)}>
                 <X className="h-5 w-5" />
               </Button>
@@ -368,7 +371,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
             <nav className="p-4 space-y-1">
               <Link
                 href="/"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted dark:hover:bg-muted"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <Home className="h-4 w-4" />
@@ -378,7 +381,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                 <div key={cat.id}>
                   <Link
                     href={`/category/${cat.slug}`}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted dark:hover:bg-muted"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <DynamicIcon name={cat.icon || "Folder"} className="h-4 w-4" />
@@ -388,7 +391,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                     <Link
                       key={child.id}
                       href={`/category/${child.slug}`}
-                      className="flex items-center gap-3 pl-10 pr-3 py-2 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                      className="flex items-center gap-3 pl-10 pr-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted dark:hover:bg-muted"
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <DynamicIcon name={child.icon || "Folder"} className="h-4 w-4" />
@@ -397,10 +400,10 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
                   ))}
                 </div>
               ))}
-              <hr className="my-4 border-slate-200 dark:border-slate-700" />
+              <hr className="my-4 border-border" />
               <Link
                 href="/dashboard"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted dark:hover:bg-muted"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <LayoutDashboard className="h-4 w-4" />
@@ -408,7 +411,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
               </Link>
               <button
                 onClick={() => { signOut(); setMobileMenuOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-danger hover:bg-danger/10"
               >
                 <LogOut className="h-4 w-4" />
                 退出登录

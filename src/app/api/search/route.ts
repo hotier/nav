@@ -2,59 +2,39 @@ import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { searchSchema } from "@/lib/validators";
+import {
+  buildSearchWhere,
+  scoreAndSort,
+  searchLinks as searchLinksFromModule,
+} from "@/lib/search";
 
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
     const userId = session?.user?.id;
+    const userRole = (session?.user as { role?: string } | undefined)?.role;
     const query = request.nextUrl.searchParams.get("q") || "";
 
     if (!query.trim()) {
       return NextResponse.json([], { status: 200 });
     }
 
+    // 可见性 + 文本匹配统一走 lib/search.ts（与 queries.searchLinks 同源）
+    const where = buildSearchWhere(userId, userRole, query);
     const links = await prisma.link.findMany({
-      where: {
-        AND: [
-          // 可见性：登录后看自己的全部 + 别人公开（且所属分类也公开）；未登录只看公开+分类公开
-          userId
-            ? { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] }
-            : { isPrivate: false, category: { isPublic: true } },
-          // 文本搜索
-          {
-            OR: [
-              { title: { contains: query } },
-              { description: { contains: query } },
-              { url: { contains: query } },
-            ],
-          },
-        ],
-      },
+      where,
       include: {
         category: {
           select: { id: true, name: true },
         },
       },
       orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
-      take: 50,
     });
 
-    // Scoring for sorted results
-    const q = query.toLowerCase();
-    const scored = links
-      .map((link) => {
-        let score = 0;
-        if (link.title.toLowerCase().includes(q)) score += 3;
-        if (link.url.toLowerCase().includes(q)) score += 2;
-        if (link.description?.toLowerCase().includes(q)) score += 1;
-        return { link, score };
-      })
-      .sort((a, b) => {
-        if (a.link.isPinned !== b.link.isPinned) return a.link.isPinned ? -1 : 1;
-        return b.score - a.score || a.link.sortOrder - b.link.sortOrder;
-      });
+    // 打分排序统一走 lib/search.ts（纯函数）
+    const scored = scoreAndSort(links, query);
 
-    return NextResponse.json(scored.map((s) => s.link));
+    return NextResponse.json(scored.slice(0, 50));
   } catch (error) {
     console.error("Failed to search:", error);
     return NextResponse.json(
@@ -83,23 +63,8 @@ export async function POST(request: Request) {
 
     const { query } = result.data;
 
-    const links = await prisma.link.findMany({
-      where: {
-        userId: session.user.id,
-        OR: [
-          { title: { contains: query } },
-          { description: { contains: query } },
-          { url: { contains: query } },
-        ],
-      },
-      include: {
-        category: {
-          select: { id: true, name: true },
-        },
-      },
-      orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
-      take: 50,
-    });
+    // 链接搜索统一走 lib/search.ts（含当前用户可见性）
+    const links = await searchLinksFromModule(query, session.user.id);
 
     const categories = await prisma.category.findMany({
       where: {

@@ -64,7 +64,7 @@ export default function SettingsPage() {
             <span className="text-sm font-medium">AI 功能已启用</span>
           </div>
           <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
-            <Key className="h-4 w-4 text-blue-500" />
+            <Key className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium">本地存储</span>
           </div>
         </div>
@@ -127,10 +127,10 @@ export default function SettingsPage() {
         {/* Account Info */}
         <div className="animate-fade-in-up delay-400">
         <div className="action-card" style={{ "--accent-color": "#3b82f6" } as React.CSSProperties}>
-          <div className="flex items-start gap-4 mb-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Key className="h-6 w-6 text-blue-500" />
-            </div>
+        <div className="flex items-start gap-4 mb-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <Key className="h-6 w-6 text-primary" />
+          </div>
             <div className="flex-1">
               <h3 className="font-semibold mb-1" style={{ fontFamily: "var(--font-space-grotesk)" }}>账户信息</h3>
               <p className="text-sm text-muted-foreground">当前登录账户</p>

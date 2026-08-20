@@ -72,7 +72,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
                 onClick={(e) => { e.stopPropagation(); onChange(name); setOpen(false); }}
                 className={cn(
                   "flex items-center justify-center h-8 rounded-lg hover:bg-accent transition-colors",
-                  value === name && "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"
+                  value === name && "bg-primary/10 text-primary"
                 )}
                 title={name}
               >
@@ -91,7 +91,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
               href="https://lucide.dev/icons"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-blue-500 hover:underline"
+              className="font-medium text-primary hover:underline"
             >
               lucide.dev/icons
             </a>

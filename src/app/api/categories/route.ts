@@ -5,7 +5,8 @@ import { createCategorySchema } from "@/lib/validators";
 import { generateSlug } from "@/lib/slug";
 import { swr } from "@/lib/cache";
 import { invalidateCategories, incrementTableVersion } from "@/lib/queries";
-import { buildLinkWhere, buildCategoryWhere, cacheScope, type LinkViewScope } from "@/lib/permissions";
+import { buildLinkWhere, buildCategoryWhere, type LinkViewScope } from "@/lib/permissions";
+import { categoryKey } from "@/lib/cache-keys";
 
 export async function GET(request: Request) {
   try {
@@ -24,10 +25,8 @@ export async function GET(request: Request) {
     // 根据 scope 生成链接子查询的 where 条件
     const linkWhere = buildLinkWhere(scope, userId, userRole);
 
-    // 使用 SWR 缓存，按 scope 区分缓存键
-    const scopeKey = cacheScope(scope);
-    const uid = userId || "anon";
-    const cacheKey = `categories:api:v2:${scopeKey}:${uid}`;
+    // 使用 SWR 缓存，按用户 + scope 区分缓存键（结构化）
+    const cacheKey = categoryKey(userId, scope);
     const categories = await swr(cacheKey, () =>
       prisma.category.findMany({
         where: {
@@ -109,7 +108,7 @@ export async function POST(request: Request) {
     });
 
     // 清除缓存，下次请求从数据库拉取最新数据
-    invalidateCategories();
+    invalidateCategories(session.user.id);
     incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
 
     return NextResponse.json(category, { status: 201 });

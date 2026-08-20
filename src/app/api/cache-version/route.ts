@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { swr } from "@/lib/cache";
 
 /**
  * GET /api/cache-version?table=Category
@@ -10,8 +9,9 @@ import { swr } from "@/lib/cache";
  *
  * 支持的 table 值：Category | Link | User
  *
- * 性能优化：SWR 内存缓存（60s TTL），避免每次请求都查 DB。
- * 版本号在单次会话内极少变化，60s 缓存足以覆盖同一次页面浏览。
+ * 不做 SWR 内存缓存：版本号是数据一致性的核心，任何写操作都会递增它。
+ * 若此处缓存，数据变更后版本号不立即反映，前端会误判“版本未变”而读到旧缓存。
+ * 版本号查询为轻量 DB 操作（upsert + select），直接查 DB 保证始终返回最新版本号。
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -22,20 +22,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const version = await swr(
-      `cache-version:${table}`,
-      async () => {
-        const key = `version:${table}`;
-        // upsert: 不存在则创建（初始值=1），存在则不动（update: {} 为空操作）
-        const setting = await prisma.appSetting.upsert({
-          where: { key },
-          create: { key, value: "1" },
-          update: {},
-        });
-        return parseInt(setting.value, 10) || 0;
-      },
-      60_000, // 60s TTL — 版本极少在同一会话内变化
-    );
+    const key = `version:${table}`;
+    // upsert: 不存在则创建（初始值=1），存在则不动（update: {} 为空操作）
+    const setting = await prisma.appSetting.upsert({
+      where: { key },
+      create: { key, value: "1" },
+      update: {},
+    });
+    const version = parseInt(setting.value, 10) || 0;
 
     return NextResponse.json({ table, version });
   } catch (error) {

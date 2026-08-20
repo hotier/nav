@@ -25,6 +25,7 @@ import {
   getLocalVersion,
   getServerVersion,
   setLocalVersion,
+  subscribeDataChanged,
 } from "@/lib/cache-client";
 
 // ==================== 类型定义 ====================
@@ -47,6 +48,9 @@ interface AutoPageSizeConfig {
 interface UseInfiniteScrollOptions<T> {
   /** 缓存表名（对应 localStorage key） */
   name: string;
+  /** 版本号用的表级 key（默认取 name）。当 name 带维度（如 Link:category:xxx）时，
+   *  应传表级 key（如 "Link"），保证一次数据变更能让所有同表页面缓存一起失效 */
+  versionTable?: string;
   /** 分页拉取函数，传入页码返回 { data, total }；pageSize 通过第二个参数动态传入 */
   fetchFn: (page: number, pageSize: number) => Promise<PageResult<T>>;
   /** 每页条数，默认 20；若启用 autoPageSize 则此值作为兜底 */
@@ -94,11 +98,15 @@ function resolveAutoConfig(opt: boolean | AutoPageSizeConfig | undefined): AutoP
 
 export function useInfiniteScroll<T>({
   name,
+  versionTable,
   fetchFn,
   pageSize: initialPageSize = 20,
   autoPageSize,
   userId,
 }: UseInfiniteScrollOptions<T>): UseInfiniteScrollReturn<T> {
+  // 版本号 key：默认用 name；带维度（如 Link:category:xxx）时用表级 versionTable，
+  // 保证数据变更（incrementTableVersion("Link")）能联动失效所有同表页面缓存
+  const versionKey = versionTable || name;
   const [items, setItemsState] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -113,6 +121,7 @@ export function useInfiniteScroll<T>({
   const hasMoreRef = useRef(true);
   const loadingRef = useRef(false); // 防止重复加载
   const manualRef = useRef(false); // 标记是否有手动 setItems 调用
+  const prefetchingRef = useRef(false); // 防止重复预取同一页
 
   // IntersectionObserver 哨兵
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -146,6 +155,30 @@ export function useInfiniteScroll<T>({
 
   const uidDep = userId || null;
 
+  // ===== prefetchNextPage：静默预取下一页写入缓存（不追加到 items）=====
+  // 提升翻页顺畅度：当前页加载完后，后台预取下一页，滚动到下一页时数据已在缓存。
+  async function prefetchNextPage(): Promise<void> {
+    if (prefetchingRef.current) return; // 防止重复预取
+    const nextPage = pageRef.current + 1;
+    const ps = pageSizeRef.current;
+    const cacheName = cacheNameRef.current;
+    const currentUserId = userIdRef.current || null;
+    // 下一页会与当前页拼接在 items 中，若已在 items 范围内则无需预取
+    if (nextPage * ps <= pageRef.current * ps) return;
+    prefetchingRef.current = true;
+    try {
+      const result = await fetchFnRef.current(nextPage, ps);
+      if (Array.isArray(result?.data)) {
+        const serverVer = await getServerVersion(versionKey);
+        writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
+      }
+    } catch {
+      // 预取失败静默，交给后续滚动触发
+    } finally {
+      prefetchingRef.current = false;
+    }
+  }
+
   // ===== loadNextPage：使用 ref 确保所有闭包拿到最新引用 =====
   const loadNextPage = useCallback(async () => {
     if (loadingRef.current || !hasMoreRef.current) return;
@@ -158,26 +191,37 @@ export function useInfiniteScroll<T>({
     const currentUserId = userIdRef.current || null;
 
     try {
-      const result = await fetchFnRef.current(nextPage, ps);
-
-      if (!Array.isArray(result?.data)) {
-        console.warn(`[useInfiniteScroll] ${name} 第 ${nextPage} 页格式异常`);
-        return;
+      // 缓存优先：预取已写入的下一页缓存可直接使用，避免网络等待，翻页更顺畅
+      const cached = readPageCache<T>(cacheName, nextPage, currentUserId);
+      let result: PageResult<T>;
+      if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+        result = { data: cached.data, total: cached.total };
+      } else {
+        const fetched = await fetchFnRef.current(nextPage, ps);
+        if (!Array.isArray(fetched?.data)) {
+          console.warn(`[useInfiniteScroll] ${name} 第 ${nextPage} 页格式异常`);
+          return;
+        }
+        result = fetched;
+        const serverVer = await getServerVersion(versionKey);
+        writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
+        setLocalVersion(versionKey, serverVer || 1, currentUserId); // 同步版本号 key
       }
 
-      const serverVer = await getServerVersion(name);
-      writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
-      setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
-
-      setItemsState((prev) => {
-        const merged = [...prev, ...result.data];
-        const stillMore = merged.length < result.total;
-        hasMoreRef.current = stillMore;
-        setHasMore(stillMore);
-        return merged;
-      });
-      setTotal(result.total);
+      // 基于页码与总量计算是否还有更多（不在 updater 内修改 ref/state，保证 React 19 下稳定）
+      const stillMore = nextPage * ps < result.total || result.data.length >= ps;
       pageRef.current = nextPage;
+      hasMoreRef.current = stillMore;
+      setHasMore(stillMore);
+
+      setItemsState((prev) => [...prev, ...result.data]);
+      setTotal(result.total);
+
+      // 预加载增强：当前页加载完且还有更多时，静默预取下一页写入缓存，
+      // 用户滚动到下一页时数据已在缓存，翻页无缝衔接。
+      if (stillMore && !loadingRef.current) {
+        void prefetchNextPage();
+      }
     } catch {
       // 加载失败，稍后重试
     } finally {
@@ -217,27 +261,22 @@ export function useInfiniteScroll<T>({
 
       // 2. 后台比对版本号（版本号基于原始表名，不含 pageSize 后缀）
       try {
-        const serverVer = await getServerVersion(name);
-        const localVer = getLocalVersion(name, currentUserId);
+        const serverVer = await getServerVersion(versionKey);
+        const localVer = getLocalVersion(versionKey, currentUserId);
 
         if (localVer && localVer === serverVer) {
-          // 版本一致，用缓存
-          if (!cached || cached.data.length === 0) {
-            if (!cancelled) {
-              setItemsState([]);
-              setTotal(0);
-              setLoading(false);
-              setHasMoreBoth(false);
+          // 版本一致 → 用缓存。但缓存为空时不能直接信任（可能是历史瞬时错误写入的空缓存），
+          // 应继续走重新拉取逻辑，确保拿到真实数据。
+          if (cached && cached.data.length > 0) {
+            // 缓存有效：第一页已满说明可能还有更多，保守设为 true
+            setHasMoreBoth(cached.data.length >= ps || cached.data.length < cached.total);
+            // 如果 hasMore 但首屏未填满 → 立即预加载下一页
+            if (hasMoreRef.current) {
+              schedulePreload();
             }
-          } else {
-            // 缓存有效，但需要根据真实 total 重新判断 hasMore
-            setHasMoreBoth(cached.data.length < cached.total);
+            return;
           }
-          // 关键：如果 hasMore 但首屏未填满 → 立即预加载下一页
-          if (hasMoreRef.current && cached && cached.data.length > 0) {
-            schedulePreload();
-          }
-          return;
+          // 缓存为空：不 return，继续执行下方的重新拉取（避免空缓存被当作有效）
         }
 
         // 版本不一致或无本地版本 → 重新拉取第一页
@@ -251,7 +290,7 @@ export function useInfiniteScroll<T>({
         }
 
         writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
-        setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
+        setLocalVersion(versionKey, serverVer || 1, currentUserId); // 同步版本号 key
         if (!cancelled) {
           setItemsState(result.data);
           setTotal(result.total);
@@ -352,9 +391,9 @@ export function useInfiniteScroll<T>({
       const result = await fetchFnRef.current(1, ps);
       if (!Array.isArray(result?.data)) return;
 
-      const serverVer = await getServerVersion(name);
+      const serverVer = await getServerVersion(versionKey);
       writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
-      setLocalVersion(name, serverVer || 1, currentUserId); // 同步原始 name 的版本号
+      setLocalVersion(versionKey, serverVer || 1, currentUserId); // 同步版本号 key
 
       const stillMore = result.data.length < result.total;
       setItemsState(result.data);
@@ -368,6 +407,40 @@ export function useInfiniteScroll<T>({
       setLoading(false);
     }
   }, [name]);
+
+  // ===== 跨页面实时同步：订阅同表数据变更广播，触发重新拉取 =====
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+
+  useEffect(() => {
+    // 收到广播时，只响应本表（versionKey）相关的变更，避免无谓重拉。
+    // 链接相关表（Link / Link:category:* / Link:mgmt:v2 等）统一响应 "Link" 广播，
+    // 保证任意页面改链接，所有链接页面都能实时同步。
+    const tableMatcher = (table: string) => {
+      const isLinkFamily =
+        table === "Link" ||
+        versionKey === table ||
+        name === table ||
+        (table === "Link" && (versionKey === "Link" || versionKey.startsWith("Link:")));
+      if (!isLinkFamily) return;
+      // 版本号已变化才真正重拉（避免与自身操作重复拉取）
+      const currentUserId = userIdRef.current || null;
+      getServerVersion(versionKey).then((serverVer) => {
+        const localVer = getLocalVersion(versionKey, currentUserId);
+        if (serverVer && serverVer !== localVer) {
+          // 收到数据变更广播：不做任何本地写入。
+          // 关键原因：writePageCache 内部会 setLocalVersion，若在这里写缓存会把本地版本
+          // 同步成最新，导致刷新时“版本一致”而读到旧缓存。因此保持本地版本为旧值，
+          // 刷新/重新进入时因版本不一致重新拉取最新数据，保证数据正确。
+        }
+      });
+    };
+    const unsubscribe = subscribeDataChanged(tableMatcher);
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [versionKey, name]);
 
   return {
     items,

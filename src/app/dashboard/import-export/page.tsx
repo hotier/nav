@@ -156,8 +156,8 @@ export default function ImportExportPage() {
             <span className="text-sm font-medium">支持 HTML/JSON 格式</span>
           </div>
           <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
-            <Download className="h-4 w-4 text-blue-500" />
-            <span className="text-sm font-medium">{stats.totalCategories} 个分类</span>
+          <Download className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">{stats.totalCategories} 个分类</span>
           </div>
         </div>
 
@@ -270,8 +270,8 @@ export default function ImportExportPage() {
           {/* Export Card */}
           <div className="action-card" style={{ "--accent-color": "#3b82f6" } as React.CSSProperties}>
             <div className="flex items-start gap-4 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Download className="h-6 w-6 text-blue-500" />
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Download className="h-6 w-6 text-primary" />
               </div>
               <div>
                 <h3 className="font-semibold mb-1" style={{ fontFamily: "var(--font-space-grotesk)" }}>导出书签</h3>

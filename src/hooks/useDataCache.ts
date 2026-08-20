@@ -19,6 +19,8 @@ import {
   writePageCache,
   getLocalVersion,
   getServerVersion,
+  setLocalVersion,
+  subscribeDataChanged,
 } from "@/lib/cache-client";
 
 // ==================== 类型定义 ====================
@@ -29,8 +31,11 @@ interface FetchResult {
 }
 
 interface TableConfig {
-  /** 缓存表名（对应 localStorage key） */
+  /** 缓存表名（对应 localStorage key，用于页面/分类/角色隔离） */
   name: string;
+  /** 版本号用的全量表级 key（默认取 name）。
+   *  全量版本号：任何数据变更都会递增它，所有页面（不管 name 如何）比对它判断数据是否过期 */
+  versionTable?: string;
   /** 拉取该表最新数据的函数，返回 { data, total } */
   fetch: () => Promise<FetchResult>;
 }
@@ -123,11 +128,13 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
       setSyncing(true);
       try {
         const results = await Promise.all(
-          cfgs.map(async ({ name, fetch: fetchFn }) => {
+          cfgs.map(async ({ name, versionTable, fetch: fetchFn }) => {
             if (cancelled) return { name, data: cached[name] || [] };
 
-            const serverVer = await getServerVersion(name);
-            const localVer = getLocalVersion(name, currentUserId);
+            // 用全量表级版本号判断数据是否过期（name 只用于缓存/页面隔离）
+            const versionKey = versionTable || name;
+            const serverVer = await getServerVersion(versionKey);
+            const localVer = getLocalVersion(versionKey, currentUserId);
 
             // 版本一致 → 用缓存
             if (localVer && localVer === serverVer) {
@@ -148,6 +155,7 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
               }
 
               writePageCache(name, 1, result.data, result.total, serverVer || 1, currentUserId);
+              setLocalVersion(versionKey, serverVer || 1, currentUserId);
               return { name, data: result.data };
             } catch {
               // 拉取失败，回退到缓存
@@ -184,6 +192,27 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
       cancelled = true;
     };
   }, [uid]); // userId 变化时重新初始化缓存
+
+  // ===== 跨页面实时同步：订阅同表数据变更广播，触发重新拉取 =====
+
+  useEffect(() => {
+    const onTableChanged = async (table: string) => {
+      const cfgs = configsRef.current;
+      const currentUserId = userIdRef.current || null;
+      // 广播的 table 是表级全量 key（如 Link / Category），匹配所有 versionTable 相同或 name 相同的表
+      const cfg = cfgs.find((c) => (c.versionTable || c.name) === table || c.name === table);
+      if (!cfg) return; // 本 hook 不关心该表
+      const versionKey = cfg.versionTable || cfg.name;
+
+      const serverVer = await getServerVersion(versionKey);
+      const localVer = getLocalVersion(versionKey, currentUserId);
+      if (!serverVer || serverVer === localVer) return; // 版本未变
+      // 收到数据变更广播：不做任何本地写入。
+      // 关键原因：writePageCache 内部会 setLocalVersion，会把本地版本同步成最新，
+      // 导致刷新时“版本一致”而读到旧缓存。保持本地版本为旧值，刷新时重新拉取最新数据。
+    };
+    return subscribeDataChanged(onTableChanged);
+  }, []); // 依赖 configsRef/userIdRef（均为 ref，稳定）
 
   // ===== 手动更新数据（乐观 CRUD）=====
 

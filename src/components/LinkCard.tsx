@@ -41,7 +41,7 @@ interface LinkCardProps {
   searchQuery?: string;
   onEdit?: (link: LinkType) => void;
   onDelete?: (id: string) => void;
-  onUpdate?: (id: string, data: Partial<LinkType>) => Promise<void>;
+  onUpdate?: (id: string, data: Partial<LinkType>, silent?: boolean) => Promise<void>;
 }
 
 function highlightText(text: string, query?: string) {
@@ -86,16 +86,15 @@ export function LinkCard({
   const [isEditing, setIsEditing] = useState(false);
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [faviconBroken, setFaviconBroken] = useState(false);
-  const [faviconSrc, setFaviconSrc] = useState<string | null>(null);
+  // 初始值直接用 link.favicon，避免首帧空白后再异步 setState 造成的“空白→加载”闪烁
+  const [faviconSrc, setFaviconSrc] = useState<string | null>(link.favicon || null);
   const [triedRecognize, setTriedRecognize] = useState(false);
   const [triedHunter, setTriedHunter] = useState(false);
-  const [triedGoogle, setTriedGoogle] = useState(false);
   const [faviconKey, setFaviconKey] = useState(0); // key 变化时强制卸载/挂载 img，避免 onError 连锁反应
 
   // 用 ref 保存 tried 状态，避免 setTimeout 闭包读到过期值
   const triedRecognizeRef = useRef(false);
   const triedHunterRef = useRef(false);
-  const triedGoogleRef = useRef(false);
   const faviconTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const FAVICON_TIMEOUT = 8000; // 8 秒超时
 
@@ -111,7 +110,6 @@ export function LinkCard({
 
   const domain = extractDomain(link.url);
   const hunterUrl = domain ? `https://logos.hunter.io/${domain}` : "";
-  const googleFaviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : "";
 
   // 清除超时定时器
   const clearFaviconTimeout = () => {
@@ -127,22 +125,31 @@ export function LinkCard({
     setFaviconKey(0);
     setTriedRecognize(false);
     setTriedHunter(false);
-    setTriedGoogle(false);
     triedRecognizeRef.current = false;
     triedHunterRef.current = false;
-    triedGoogleRef.current = false;
+    const cached = localStorage.getItem(`nav_favicon_v2_${link.id}`);
     if (link.favicon) {
-      const cached = localStorage.getItem(`nav_favicon_v2_${link.id}`);
       if (cached) {
         try {
           const data = JSON.parse(cached) as { broken: boolean; url: string };
+          // 有 favicon 时仅当 broken 标记与当前 favicon 匹配才视为失效
           if (data.broken && data.url === link.favicon) {
             setFaviconBroken(true);
           }
         } catch { /* ignore */ }
       }
     } else {
-      setFaviconBroken(false);
+      // 无 favicon 时也要读取本地失效标记，避免每次刷新都重复识别失败的站点
+      if (cached) {
+        try {
+          const data = JSON.parse(cached) as { broken: boolean; url: string };
+          if (data.broken) {
+            setFaviconBroken(true);
+          }
+        } catch { /* ignore */ }
+      } else {
+        setFaviconBroken(false);
+      }
     }
   }, [link.favicon, link.id]);
 
@@ -161,7 +168,7 @@ export function LinkCard({
           if (meta.favicon) {
             const updates: Record<string, string> = { favicon: meta.favicon };
             if (!link.description && meta.description) updates.description = meta.description;
-            onUpdate?.(link.id, updates);
+            onUpdate?.(link.id, updates, true);
           } else {
             // HTML 解析没拿到 favicon，走第三方回退
             triggerFaviconFallback();
@@ -185,14 +192,6 @@ export function LinkCard({
       setFaviconSrc(hunterUrl);
       return;
     }
-    // 第二优先级：hunter.io 失败 → 尝试 Google Favicons
-    if (!triedGoogleRef.current && googleFaviconUrl) {
-      triedGoogleRef.current = true;
-      setTriedGoogle(true);
-      setFaviconKey((k) => k + 1);
-      setFaviconSrc(googleFaviconUrl);
-      return;
-    }
     // 所有源均失败，标记为失效
     setFaviconBroken(true);
     try {
@@ -201,7 +200,7 @@ export function LinkCard({
         JSON.stringify({ broken: true, url: link.favicon || hunterUrl })
       );
     } catch { /* ignore */ }
-  }, [hunterUrl, googleFaviconUrl, link.id, link.favicon]);
+  }, [hunterUrl, link.id, link.favicon]);
 
   // img onError 回调：清除超时后进入回退链
   const handleFaviconError = useCallback(() => {
@@ -209,19 +208,16 @@ export function LinkCard({
     triggerFaviconFallback();
   }, [triggerFaviconFallback]);
 
-  // img onLoad 回调：清除超时，若来自 hunter.io / Google 则自动写入
+  // img onLoad 回调：清除超时，若来自 hunter.io 则自动写入
   const handleFaviconLoad = useCallback(() => {
     clearFaviconTimeout();
-    if (triedHunterRef.current && !triedGoogleRef.current && faviconSrc === hunterUrl) {
-      onUpdate?.(link.id, { favicon: hunterUrl });
+    if (triedHunterRef.current && faviconSrc === hunterUrl) {
+      onUpdate?.(link.id, { favicon: hunterUrl }, true);
     }
-    if (triedGoogleRef.current && faviconSrc === googleFaviconUrl) {
-      onUpdate?.(link.id, { favicon: googleFaviconUrl });
-    }
-  }, [faviconSrc, hunterUrl, googleFaviconUrl, link.id, onUpdate]);
+  }, [faviconSrc, hunterUrl, link.id, onUpdate]);
 
   // 超时兜底仅用于原始 icon：8 秒内未加载成功也未报错 → 进入回退链
-  // hunter.io / Google 不加超时，只靠 onError 自然驱动，确保“一旦可用不会进入下一步”
+  // hunter.io 不加超时，只靠 onError 自然驱动，确保“一旦可用不会进入下一步”
   useEffect(() => {
     clearFaviconTimeout();
 
@@ -286,7 +282,8 @@ export function LinkCard({
   const handleEditSubmit = async (data: any) => {
     if (!onUpdate) return;
     try {
-      await onUpdate(link.id, data);
+      // 传 silent=true：避免 LinksGrid.handleUpdate 再弹一次 toast（重复提示）
+      await onUpdate(link.id, data, true);
       setIsEditing(false);
       toast.success("链接已更新");
     } catch {
@@ -312,7 +309,7 @@ export function LinkCard({
           <div
             ref={setNodeRef}
             style={style}
-            className={`h-full group bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl border border-slate-200/50 dark:border-slate-700/50 p-4 hover:border-blue-400 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 ${isDragging ? "shadow-xl ring-2 ring-blue-400" : ""}`}
+            className={`h-full group bg-card/80 dark:bg-card/80 backdrop-blur-xl rounded-2xl border border-border p-4 hover:border-primary hover:shadow-lg hover:shadow-primary/10 transition-all duration-300 ${isDragging ? "shadow-xl ring-2 ring-primary" : ""}`}
             onClick={handleCardClick}
           >
             <div className="flex items-start gap-3">
@@ -320,10 +317,10 @@ export function LinkCard({
                 <div
                   {...attributes}
                   {...listeners}
-                  className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 -ml-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                  className="flex-shrink-0 cursor-grab active:cursor-grabbing p-1 -ml-1 hover:bg-muted dark:hover:bg-muted rounded-lg transition-colors"
                   title="拖拽排序"
                 >
-                  <GripVertical className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                  <GripVertical className="h-4 w-4 text-muted-foreground" />
                 </div>
               )}
 
@@ -331,34 +328,36 @@ export function LinkCard({
                 {faviconSrc && !faviconBroken ? (
                   <img
                     key={faviconKey}
-                    src={proxyImageUrl(faviconSrc)}
+                    src={faviconSrc.startsWith("https://faviconsnap.com/")
+                      ? faviconSrc
+                      : proxyImageUrl(faviconSrc)}
                     alt=""
                     className="h-10 w-10 rounded-xl object-cover"
                     onError={handleFaviconError}
                     onLoad={handleFaviconLoad}
                   />
                 ) : null}
-                <div className={`favicon-fallback h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500/10 to-sky-500/5 flex items-center justify-center ${faviconSrc && !faviconBroken ? "hidden" : ""}`}>
-                  <Link2 className="h-5 w-5 text-[#3498db]" />
+                <div className={`favicon-fallback h-10 w-10 rounded-xl bg-gradient-to-br from-primary/10 to-sky-500/5 flex items-center justify-center ${faviconSrc && !faviconBroken ? "hidden" : ""}`}>
+                  <Link2 className="h-5 w-5 text-primary" />
                 </div>
               </div>
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  {link.isPinned && <span className="text-amber-500">📌</span>}
+                  {link.isPinned && <span className="text-warning">📌</span>}
                   <span
-                    className="font-semibold text-slate-800 dark:text-white truncate select-text cursor-text"
+                    className="font-semibold text-foreground truncate select-text cursor-text"
                     title={link.title}
                   >{highlightText(link.title, searchQuery)}</span>
                   {link.isPrivate && (
-                    <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded flex-shrink-0">
+                    <span className="text-xs bg-warning-muted text-warning-muted-foreground px-1.5 py-0.5 rounded flex-shrink-0">
                       私有
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400 dark:text-slate-500 truncate mb-1 select-text" title={link.url}>{highlightText(link.url, searchQuery)}</p>
+                <p className="text-xs text-muted-foreground truncate mb-1 select-text" title={link.url}>{highlightText(link.url, searchQuery)}</p>
                 <p
-                  className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 min-h-[2rem] select-text"
+                  className="text-xs text-muted-foreground line-clamp-2 min-h-[2rem] select-text"
                   title={link.description || undefined}
                 >
                   {link.description ? highlightText(link.description, searchQuery) : ""}
@@ -371,7 +370,7 @@ export function LinkCard({
                     e.stopPropagation();
                     handleCopy();
                   }}
-                  className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                  className="p-2 rounded-xl hover:bg-muted dark:hover:bg-muted text-muted-foreground hover:text-primary dark:hover:text-primary transition-colors"
                   title="复制链接"
                 >
                   <Copy className="h-4 w-4" />
@@ -421,7 +420,7 @@ export function LinkCard({
                   setContextMenuOpen(false);
                   onDelete?.(link.id);
                 }}
-                className="text-red-600 focus:text-red-600"
+                className="text-danger focus:text-danger"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 删除
@@ -436,10 +435,10 @@ export function LinkCard({
           <DialogHeader>
             <DialogTitle className="text-center">{link.title}</DialogTitle>
           </DialogHeader>
-          <div className="flex justify-center p-4 bg-white dark:bg-slate-800 rounded-lg">
+          <div className="flex justify-center p-4 bg-card dark:bg-card rounded-lg">
             <QRCodeSVG value={link.url} size={180} />
           </div>
-          <p className="text-center text-xs text-gray-400 dark:text-slate-400 break-all px-2">
+          <p className="text-center text-xs text-muted-foreground break-all px-2">
             {link.url}
           </p>
         </DialogContent>

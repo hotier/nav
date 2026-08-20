@@ -65,21 +65,21 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-muted/40 via-background to-primary/5 dark:from-background dark:via-background dark:to-background flex items-center justify-center p-4">
       <div className="w-full max-w-[380px]">
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-3 mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 via-sky-500 to-cyan-500 flex items-center justify-center shadow-xl shadow-blue-500/25">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary via-sky-500 to-cyan-500 flex items-center justify-center shadow-xl shadow-primary/25">
               <span className="text-white font-bold" style={{ fontFamily: "var(--font-space-grotesk)", fontSize: "18px" }}>ON</span>
             </div>
           </Link>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white" style={{ fontFamily: "var(--font-space-grotesk)" }}>修改密码</h1>
-          <p className="text-slate-400 dark:text-slate-400 mt-1 text-sm">保护你的账户安全</p>
+          <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>修改密码</h1>
+          <p className="text-muted-foreground mt-1 text-sm">保护你的账户安全</p>
         </div>
 
         {/* Password Card */}
-        <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-slate-700/60 p-6 shadow-2xl shadow-blue-500/5">
+        <div className="bg-card/90 dark:bg-card/90 backdrop-blur-xl rounded-3xl border border-border p-6 shadow-2xl shadow-primary/5">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label className="text-sm">当前密码</Label>
@@ -90,12 +90,12 @@ export default function ChangePasswordPage() {
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="输入当前密码"
                   disabled={isSubmitting}
-                  className="h-12 rounded-xl bg-slate-50/80 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600 text-base pr-10"
+                  className="h-12 rounded-xl bg-muted/80 dark:bg-muted/50 border-border text-base pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((s) => ({ ...s, current: !s.current }))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
                 >
                   {showPassword.current ? "隐藏" : "显示"}
@@ -112,12 +112,12 @@ export default function ChangePasswordPage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="输入新密码（至少6位）"
                   disabled={isSubmitting}
-                  className="h-12 rounded-xl bg-slate-50/80 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600 text-base pr-10"
+                  className="h-12 rounded-xl bg-muted/80 dark:bg-muted/50 border-border text-base pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((s) => ({ ...s, new: !s.new }))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
                 >
                   {showPassword.new ? "隐藏" : "显示"}
@@ -134,12 +134,12 @@ export default function ChangePasswordPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="再次输入新密码"
                   disabled={isSubmitting}
-                  className="h-12 rounded-xl bg-slate-50/80 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600 text-base pr-10"
+                  className="h-12 rounded-xl bg-muted/80 dark:bg-muted/50 border-border text-base pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((s) => ({ ...s, confirm: !s.confirm }))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
                 >
                   {showPassword.confirm ? "隐藏" : "显示"}
@@ -149,7 +149,7 @@ export default function ChangePasswordPage() {
 
             <Button
               type="submit"
-              className="w-full h-12 rounded-xl text-base font-medium bg-gradient-to-r from-blue-500 to-sky-500 hover:from-blue-600 hover:to-sky-600 shadow-lg shadow-blue-500/25 transition-all duration-200"
+              className="w-full h-12 rounded-xl text-base font-medium shadow-lg shadow-primary/25 transition-all duration-200"
               disabled={isSubmitting}
             >
               {isSubmitting ? (
@@ -171,15 +171,15 @@ export default function ChangePasswordPage() {
         <div className="text-center mt-6 space-y-3">
           <Link
             href="/login"
-            className="text-sm text-slate-500 dark:text-slate-400 hover:text-blue-500 transition-colors inline-flex items-center gap-1"
+            className="text-sm text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1"
           >
             <ArrowLeft className="h-4 w-4" />
             返回登录
           </Link>
         </div>
 
-        <p className="text-center mt-4 text-sm text-slate-400 dark:text-slate-400">
-          <Link href="/" className="hover:text-blue-500 transition-colors">
+        <p className="text-center mt-4 text-sm text-muted-foreground">
+          <Link href="/" className="hover:text-primary transition-colors">
             ← 返回首页
           </Link>
         </p>

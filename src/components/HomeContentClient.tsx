@@ -1,8 +1,18 @@
 "use client";
 
 import { LinksGrid } from "@/components/LinksGrid";
+import { CategorySkeleton } from "@/components/CategorySkeleton";
 import { useDataCache } from "@/hooks/useDataCache";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { useEffect, useState } from "react";
 import type { Link as LinkType, Category } from "@/types";
 import { Home, Loader2 } from "lucide-react";
 
@@ -13,13 +23,23 @@ interface Props {
 }
 
 export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
+  // 避免 SSR 首帧与客户端水合首帧渲染不一致（客户端缓存 hooks 在两端数据不同）
+  const [isHydrated, setIsHydrated] = useState(false);
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
   const { data: catData, loading: catLoading } = useDataCache({ configs: [
     {
       name: "Category",
       fetch: () =>
         fetch("/api/categories")
           .then((r) => r.json())
-          .then((d: Category[]) => ({ data: d, total: d.length })),
+          .then((d: Category[] | { error?: string }) => ({
+            // 防御：接口失败/返回错误时不崩溃，回退为空数组
+            data: Array.isArray(d) ? d : [],
+            total: Array.isArray(d) ? d.length : 0,
+          })),
     },
   ], userId });
 
@@ -40,38 +60,13 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
 
-  const categories = (catData["Category"] || []) as Category[];
+  const categories = Array.isArray(catData["Category"]) ? (catData["Category"] as Category[]) : [];
   const displayCount = linkCount || total || links.length;
 
-  // 加载中 → 骨架
-  if (linksLoading && links.length === 0) {
-    return (
-      <>
-        <div className="mb-6">
-          <div className="flex items-center gap-2.5">
-            <Home className="h-6 w-6 text-slate-800 dark:text-white" />
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
-              style={{ fontFamily: "var(--font-space-grotesk)" }}>
-              全部书签
-            </h2>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-pulse">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="rounded-xl border bg-card p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-muted" />
-                <div className="flex-1 space-y-1.5">
-                  <div className="h-4 w-24 rounded bg-muted" />
-                  <div className="h-3 w-32 rounded bg-muted" />
-                </div>
-              </div>
-              <div className="h-3 w-3/4 rounded bg-muted" />
-            </div>
-          ))}
-        </div>
-      </>
-    );
+  // 优先显示骨架：只要还在加载（未水合 / 链接加载中）就先展示骨架，
+  // 确认无数据、失败或超时后才切换到空数据/内容。
+  if (!isHydrated || linksLoading) {
+    return <CategorySkeleton />;
   }
 
   // 数据为空
@@ -80,24 +75,28 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
       <>
         <div className="mb-6">
           <div className="flex items-center gap-2.5">
-            <Home className="h-6 w-6 text-slate-800 dark:text-white" />
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
+            <Home className="h-6 w-6 text-foreground" />
+            <h2 className="text-2xl font-bold text-foreground"
               style={{ fontFamily: "var(--font-space-grotesk)" }}>
               全部书签
             </h2>
           </div>
         </div>
-        <div className="max-w-md mx-auto text-center py-16">
-          <div className="text-5xl mb-4">📭</div>
-          <p className="text-slate-600 dark:text-slate-300 mb-2">还没有书签</p>
-          <p className="text-sm text-slate-400 dark:text-slate-500 mb-4">登录后可以添加和管理书签</p>
-          <a
-            href="/login"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/25"
-          >
-            前往登录 →
-          </a>
-        </div>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="default" className="text-5xl">📭</EmptyMedia>
+            <EmptyTitle>还没有书签</EmptyTitle>
+            <EmptyDescription>登录后可以添加和管理书签</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <a
+              href="/login"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
+            >
+              前往登录 →
+            </a>
+          </EmptyContent>
+        </Empty>
       </>
     );
   }
@@ -107,11 +106,11 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
     <>
       <div className="mb-6">
         <div className="flex items-center gap-2.5">
-          <Home className="h-6 w-6 text-slate-800 dark:text-white" />
-          <h2 className="text-2xl font-bold text-slate-800 dark:text-white"
+          <Home className="h-6 w-6 text-foreground" />
+          <h2 className="text-2xl font-bold text-foreground"
             style={{ fontFamily: "var(--font-space-grotesk)" }}>
             全部书签
-            <span className="ml-1.5 text-sm font-normal text-slate-400 dark:text-slate-500">
+            <span className="ml-1.5 text-sm font-normal text-muted-foreground">
               ({displayCount})
             </span>
           </h2>

@@ -1,12 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { LinksGrid } from "@/components/LinksGrid";
 import { useDataCache } from "@/hooks/useDataCache";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import type { Category, Link as LinkType } from "@/types";
-import { readPageCache, writePageCache } from "@/lib/cache-client";
+import { readPageCache, writePageCache, subscribeDataChanged } from "@/lib/cache-client";
 
 export default function SearchContent() {
   const searchParams = useSearchParams();
@@ -59,13 +66,29 @@ export default function SearchContent() {
     fetchResults();
   }, [fetchResults]);
 
+  // 订阅 Link 全量版本变更：链接增删改后，若当前有搜索词则清除缓存并重新搜索，
+  // 保证搜索页与其余页面数据一致。
+  const fetchResultsRef = useRef(fetchResults);
+  useEffect(() => {
+    fetchResultsRef.current = fetchResults;
+  }, [fetchResults]);
+  useEffect(() => {
+    const unsub = subscribeDataChanged((table) => {
+      if (table === "Link" && fetchResultsRef.current) {
+        // 清除搜索缓存，强制重新搜索
+        fetchResultsRef.current();
+      }
+    });
+    return unsub;
+  }, []);
+
   return (
     <>
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-white" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+        <h2 className="text-2xl font-bold text-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
           搜索结果
           {query && (
-            <span className="ml-2 text-sm font-normal text-slate-400 dark:text-slate-500">
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
               ({links.length})
             </span>
           )}
@@ -73,11 +96,11 @@ export default function SearchContent() {
       </div>
 
       {query && (
-        <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl border border-slate-200/50 dark:border-slate-700/50 p-4 mb-6">
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            关键词: <span className="font-medium text-blue-500">&quot;{query}&quot;</span>
+        <div className="bg-card/80 dark:bg-card/80 backdrop-blur-xl rounded-2xl border border-border p-4 mb-6">
+          <p className="text-sm text-muted-foreground">
+            关键词: <span className="font-medium text-primary">&quot;{query}&quot;</span>
           </p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             找到 {links.length} 个相关链接
             {isLoading && <span className="ml-2 inline-block animate-pulse">正在搜索...</span>}
           </p>
@@ -85,17 +108,21 @@ export default function SearchContent() {
       )}
 
       {!query ? (
-        <div className="max-w-md mx-auto text-center py-16">
-          <div className="text-5xl mb-4">🔍</div>
-          <p className="text-slate-600 dark:text-slate-300 mb-2">输入关键词搜索书签</p>
-          <p className="text-sm text-slate-400 dark:text-slate-500">在上方搜索框中输入关键词并按回车</p>
-        </div>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="default" className="text-5xl">🔍</EmptyMedia>
+            <EmptyTitle>输入关键词搜索书签</EmptyTitle>
+            <EmptyDescription>在上方搜索框中输入关键词并按回车</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : links.length === 0 && !isLoading ? (
-        <div className="max-w-md mx-auto text-center py-16">
-          <div className="text-5xl mb-4">🔍</div>
-          <p className="text-slate-600 dark:text-slate-300 mb-2">未找到相关链接</p>
-          <p className="text-sm text-slate-400 dark:text-slate-500">尝试其他关键词</p>
-        </div>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="default" className="text-5xl">🔍</EmptyMedia>
+            <EmptyTitle>未找到相关链接</EmptyTitle>
+            <EmptyDescription>尝试其他关键词</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <LinksGrid
           links={links}

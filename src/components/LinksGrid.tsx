@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/sortable";
 import { LinkCard } from "@/components/LinkCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { notifyDataChanged } from "@/lib/cache-client";
 import type { Category, Link as LinkType } from "@/types";
 import toast from "react-hot-toast";
 
@@ -37,6 +38,11 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
   useEffect(() => {
     setIsHydrated(true);
   }, []);
+
+  // 父级数据变化（如分页加载、刷新）时同步到内部 state
+  useEffect(() => {
+    setLinks(initialLinks);
+  }, [initialLinks]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -77,17 +83,21 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
         sortOrder: link.isPinned ? pinnedIndex++ : unpinnedIndex++,
       }));
 
-      await fetch("/api/links/reorder", {
+      const res = await fetch("/api/links/reorder", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ updates }),
       });
+      if (res.ok) {
+        // 广播数据变更，让其他已打开的链接页面实时刷新
+        notifyDataChanged("Link");
+      }
     } catch (error) {
       console.error("Failed to update sort order:", error);
     }
   };
 
-  const handleUpdate = async (id: string, data: Partial<LinkType>) => {
+  const handleUpdate = async (id: string, data: Partial<LinkType>, silent?: boolean) => {
     const prevLinks = links;
     // 乐观更新 UI（策略4：先更新本地缓存+视图，页面瞬时响应）
     setLinks((prev) =>
@@ -95,7 +105,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
         .map((l) => (l.id === id ? { ...l, ...data } : l))
         .sort((a, b) => {
           if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-          return a.sortOrder - b.sortOrder;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         })
     );
     try {
@@ -109,13 +119,15 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
         const updated = await response.json();
         setLinks((prev) => {
           const next = prev.map((link) => (link.id === id ? { ...link, ...updated } : link));
-          // 置顶切换后按规则重排序
+          // 置顶切换后按规则重排序（最新在前）
           return next.sort((a, b) => {
             if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-            return a.sortOrder - b.sortOrder;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
           });
         });
-        toast.success("更新成功");
+        if (!silent) toast.success("更新成功");
+        // 广播数据变更，让其他已打开的链接页面实时刷新
+        notifyDataChanged("Link");
       } else {
         // 回滚
         setLinks(prevLinks);
@@ -147,6 +159,8 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
 
       if (response.ok) {
         toast.success("删除成功");
+        // 广播数据变更，让其他已打开的链接页面实时刷新
+        notifyDataChanged("Link");
       } else {
         // 回滚
         setLinks(prevLinks);
@@ -181,7 +195,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
           onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}
           title="删除链接"
           description={
-            <p>确定要删除这个链接吗？<span className="mt-2 block text-red-500 text-sm">此操作不可撤销。</span></p>
+            <p>确定要删除这个链接吗？<span className="mt-2 block text-danger text-sm">此操作不可撤销。</span></p>
           }
           confirmLabel="确认删除"
           onConfirm={handleConfirmDelete}
@@ -214,7 +228,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
           onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}
           title="删除链接"
           description={
-            <p>确定要删除这个链接吗？<span className="mt-2 block text-red-500 text-sm">此操作不可撤销。</span></p>
+            <p>确定要删除这个链接吗？<span className="mt-2 block text-danger text-sm">此操作不可撤销。</span></p>
           }
           confirmLabel="确认删除"
           onConfirm={handleConfirmDelete}

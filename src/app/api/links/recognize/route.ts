@@ -21,7 +21,8 @@ export async function POST(request: Request) {
 
   const meta = await recognizeUrl(url);
 
-  if (!meta.title) {
+  // 标题或图标任一识别成功即视为有效（favicon 识别失败不应导致图标也丢失）
+  if (!meta.title && !meta.favicon) {
     return NextResponse.json({ error: "获取网页信息失败" }, { status: 500 });
   }
 

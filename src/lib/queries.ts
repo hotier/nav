@@ -7,11 +7,22 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { swr, invalidateByPrefix, deleteCached } from "@/lib/cache";
+import {
+  categoryKey,
+  linkCountKey,
+  linkListKey,
+  dashboardStatsKey,
+  prefixByUser,
+  prefixPublicAnon,
+  prefixPublicUser,
+  prefixCategoryByUser,
+} from "@/lib/cache-keys";
+import { searchLinks as unifiedSearchLinks } from "@/lib/search";
 
 // ===================== 分类查询 =====================
 
 export const getCategories = cache(async (userId?: string) => {
-  const cacheKey = `categories:${userId || "anon"}`;
+  const cacheKey = categoryKey(userId, "home");
   return swr(cacheKey, () => {
     // 与 buildCategoryWhere 对齐：登录用户看公开+自己的，未登录只看公开
     const where: Record<string, unknown> = userId
@@ -36,7 +47,7 @@ export const getCategories = cache(async (userId?: string) => {
 
 /** 获取可见链接总数（SSR 用，仅 COUNT，不加载完整数据） */
 export const getLinkCount = cache(async (userId?: string) => {
-  const cacheKey = `links:count:${userId || "anon"}`;
+  const cacheKey = linkCountKey(userId);
   return swr(cacheKey, () => {
     const where: Record<string, unknown> = {};
     if (userId) {
@@ -50,7 +61,7 @@ export const getLinkCount = cache(async (userId?: string) => {
 });
 
 export const getAllLinks = cache(async (userId?: string) => {
-  const cacheKey = `links:all:${userId || "anon"}`;
+  const cacheKey = linkListKey(userId, "home");
   return swr(cacheKey, () => {
     const where: Record<string, unknown> = {};
     if (userId) {
@@ -70,107 +81,63 @@ export const getAllLinks = cache(async (userId?: string) => {
 });
 
 // ===================== 搜索（不缓存——查询变化太频繁） =====================
+// 统一转发到 lib/search.ts，规则只有一份真源。
 
 export async function searchLinks(query: string, userId?: string) {
-  const results = await prisma.link.findMany({
-    where: {
-      AND: [
-        // 可见性：登录后看自己的全部 + 别人公开（且所属分类也公开）；未登录只看公开+分类公开
-        userId
-          ? { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] }
-          : { isPrivate: false, category: { isPublic: true } },
-        // 文本搜索
-        {
-          OR: [
-            { title: { contains: query } },
-            { description: { contains: query } },
-            { url: { contains: query } },
-          ],
-        },
-      ],
-    },
-    include: { category: { select: { id: true, name: true } } },
-  });
-
-  const q = query.toLowerCase();
-  const scored = results
-    .map((link) => {
-      let score = 0;
-      if (link.title.toLowerCase().includes(q)) score += 3;
-      if (link.url.toLowerCase().includes(q)) score += 2;
-      if (link.description?.toLowerCase().includes(q)) score += 1;
-      return { link, score };
-    })
-    .sort((a, b) => {
-      if (a.link.isPinned !== b.link.isPinned) return a.link.isPinned ? -1 : 1;
-      return b.score - a.score || a.link.sortOrder - b.link.sortOrder;
-    });
-
-  return scored.slice(0, 50).map((s) => s.link);
+  return unifiedSearchLinks(query, userId);
 }
 
 // ===================== 缓存失效 —— 管理后台 CRUD 后调用 =====================
 
-/** 分类发生变更（创建/更新/删除）后调用 */
-export function invalidateCategories(): void {
-  invalidateByPrefix("categories");
-  invalidateByPrefix("category:");
-  deleteCached("anon:categories"); // 匿名用户分类缓存
-  invalidateByPrefix("links"); // 分类变更影响所有链接的归类展示，必须全清
-  invalidateByPrefix("dashboard:stats:"); // 仪表盘统计也需刷新
+/**
+ * 分类发生变更（创建/更新/删除）后调用
+ *
+ * 清分类键 + 公开链接视图 + 各自用户的仪表盘统计。
+ * 登录用户的私有链接缓存不在此暴力清除，而是由 incrementTableVersion("Category")
+ * 联动递增 Link 版本号，客户端通过 /api/cache-version 比对后重新拉取（已有跨端同步机制）。
+ * 全程使用带 user 维度的前缀，绝不清无 user 维度的 links 前缀。
+ */
+export function invalidateCategories(userId?: string): void {
+  if (userId) {
+    invalidateByPrefix(prefixCategoryByUser(userId));
+    deleteCached(dashboardStatsKey(userId));
+  } else {
+    // 无参（分类 CRUD 无特定用户上下文）：清所有用户维度分类前缀
+    invalidateByPrefix("categories:v1:user:");
+    invalidateByPrefix("dashboard:stats:v1:");
+  }
+  // 公开分类变更影响公开浏览视图的链接归类展示
+  invalidateByPrefix(prefixPublicAnon());
 }
 
 /**
  * 链接发生变更（创建/更新/删除/排序/状态）后调用
  *
- * 精确清除策略：
- *   - 有 categoryId → exact key 删除，只影响该用户在该分类的缓存
- *   - 无 categoryId → prefix 删除（排序/检测等批量操作，无法定位具体分类）
+ * 精确清除策略（基于结构化键前缀，绝不出现无 user 维度的 links 前缀）：
+ *   - 该用户全部链接缓存
+ *   - 匿名公开视图（任何人未登录看到的公开页）
+ *   - 登录用户浏览公开页的 pub 视图（自己登录态）
+ *   - 给定 categoryId 时额外精确清该分类在各 scope 的列表键
+ *   - 管理员编辑他人链接时，额外清管理员自身的缓存（由调用方传 adminId 触发）
  */
 export function invalidateLinks(userId?: string, categoryId?: string): void {
-  const keys: string[] = [];
-
   if (userId) {
-    keys.push(`links:all:${userId}`);
-    keys.push(`links:dashboard:${userId}`);
-    keys.push(`dashboard:stats:${userId}`); // 仪表盘统计也需刷新
-
+    invalidateByPrefix(prefixByUser(userId));
+    invalidateByPrefix(prefixPublicAnon());
+    invalidateByPrefix(prefixPublicUser(userId));
     if (categoryId) {
-      // ====== 精确清除 ======
-      // 1. 该分类的链接列表（含当前用户 + 匿名）
-      keys.push(`links:cat:${categoryId}:${userId}`);
-      keys.push(`links:cat:${categoryId}:anon`);
-      // 2. 精确清除当前用户的管理后台/首页 API 缓存
-      invalidateByPrefix(`links:api:v2:mgmt:${userId}:${categoryId}:`);
-      invalidateByPrefix(`links:api:v2:mgmt:${userId}:all:`);
-      invalidateByPrefix(`links:api:v2:pub:${userId}:${categoryId}:`);
-      invalidateByPrefix(`links:api:v2:pub:${userId}:all:`);
-      // 3. 链接可见性变更会影响所有能看到的用户 → 清空该分类下所有公开视图缓存
-      invalidateByPrefix(`links:api:v2:pub:anon:${categoryId}:`);
-      invalidateByPrefix(`links:api:v2:pub:anon:all:`);
-      // 其他登录用户的 pub 缓存也一并清除（无法枚举用户，用全量 pub 清理兜底）
-      invalidateByPrefix(`links:api:v2:pub:`);
-    } else {
-      // ====== 批量操作兜底 ======
-      // 没有分类信息时，只能清除该用户所有分类 + 所有 API 缓存
-      invalidateByPrefix(`links:cat:`);
-      invalidateByPrefix(`links:api:v2:mgmt:${userId}`);
-      invalidateByPrefix(`links:api:v2:pub:${userId}`);
-      invalidateByPrefix(`links:api:v2:pub:anon`);
+      // 精确清该分类在各 scope 的列表键（覆盖 home/manage）
+      invalidateByPrefix(linkListKey(userId, "home", categoryId));
+      invalidateByPrefix(linkListKey(userId, "manage", categoryId));
+      invalidateByPrefix(linkListKey(undefined, "home", categoryId));
     }
   } else if (categoryId) {
-    // 无用户但有分类（罕见，兜底用 prefix）
-    invalidateByPrefix(`links:cat:${categoryId}`);
-    invalidateByPrefix(`links:api:v2:pub:anon:${categoryId}`);
+    // 无用户但有分类（罕见）：仅清匿名公开视图下该分类
+    invalidateByPrefix(linkListKey(undefined, "home", categoryId));
   } else {
-    // 无用户无分类（如初始状态），清除所有匿名缓存
-    invalidateByPrefix(`links:api:v2:pub:anon`);
+    // 无用户无分类：仅清匿名公开视图
+    invalidateByPrefix(prefixPublicAnon());
   }
-
-  // 匿名用户全量链接列表
-  keys.push("links:all:anon");
-
-  keys.forEach((k) => deleteCached(k));
 }
 
 /** 当链接变更涉及分类转移时，同时失效新旧两个分类的缓存 */
@@ -205,20 +172,11 @@ export function invalidateUsers(): void {
 export async function incrementTableVersion(table: string): Promise<number> {
   const keys = [table];
 
-  // "Link" 变更时需要同步递增 "Link:mgmt" 及其 v2 版本（仪表盘管理后台缓存），避免缓存污染
-  if (table === "Link") {
-    keys.push("Link:mgmt");
-    keys.push("Link:mgmt:v2");
-  }
-
-  // "Category" 变更时同步递增 "Category:mgmt" 及其 v2 版本（仪表盘分类管理缓存）
+  // 客户端所有页面统一比对全量版本号（Link / Category）来判断数据是否过期，
+  // 不再需要级联递增 *:mgmt* 版本号（那些只用于缓存 key 隔离，不参与版本比对）。
+  // 分类可见性变更会影响链接的可见范围 → 联动递增 Link 全量版本，触发所有链接页面重拉。
   if (table === "Category") {
-    keys.push("Category:mgmt");
-    keys.push("Category:mgmt:v2");
-    // 分类可见性变更会影响链接的可见范围 → 联动递增 Link 版本，触发客户端重新拉取链接
     keys.push("Link");
-    keys.push("Link:mgmt");
-    keys.push("Link:mgmt:v2");
   }
 
   // 链接/分类/用户变更 → 联动递增 DashboardStats 版本

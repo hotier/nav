@@ -7,7 +7,15 @@ import { Plus, Trash2, Edit, Folder, FolderOpen, Loader2, Globe, EyeOff, Chevron
 import { DynamicIcon } from "@/components/DynamicIcon";
 import { AdminLayout } from "@/components/AdminLayout";
 import { IconPicker } from "@/components/IconPicker";
+import { notifyDataChanged } from "@/lib/cache-client";
 
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -63,12 +71,13 @@ export default function CategoriesPage() {
   // Category 数据
   const { data: cacheData, loading: _loading, syncing: _syncing, setData } = useDataCache({
     configs: [
-    { name: "Category:mgmt:v2", fetch: () => fetch("/api/categories?scope=manage").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
+    { name: "Category:mgmt:v2", versionTable: "Category", fetch: () => fetch("/api/categories?scope=manage").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
   ], userId: uid });
 
   // Link 数据 — 无限滚动加载
   const { items: allLinks, hasMore, isLoadingMore, sentinelRef, setItems: setLinkData } = useInfiniteScroll<LinkType>({
     name: "Link:mgmt:v2",
+    versionTable: "Link",
     autoPageSize: true,
     userId: uid,
     fetchFn: (page, pageSize) =>
@@ -167,6 +176,8 @@ export default function CategoriesPage() {
           )
         );
         toast.success(updated.isPublic ? "已设为公开" : "已设为私有");
+        notifyDataChanged("Category");
+        notifyDataChanged("Link");
         refreshLinks();
       } else {
         setData("Category:mgmt:v2", () => prevCategories);
@@ -326,7 +337,7 @@ export default function CategoriesPage() {
   const renderLinkPreview = (categoryId: string) => {
     const links = categoryLinks[categoryId] || [];
     if (links.length === 0) {
-      return <span className="text-xs text-slate-400 italic">暂无链接</span>;
+      return <span className="text-xs text-muted-foreground italic">暂无链接</span>;
     }
     const displayLinks = links.slice(0, LINK_PREVIEW_COUNT);
     const remaining = links.length - LINK_PREVIEW_COUNT;
@@ -335,14 +346,14 @@ export default function CategoriesPage() {
         {displayLinks.map((link) => (
           <span
             key={link.id}
-            className="inline-block max-w-[45%] truncate text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded shrink-0"
+            className="inline-block max-w-[45%] truncate text-xs bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground px-1.5 py-0.5 rounded shrink-0"
             title={link.title}
           >
             {link.title}
           </span>
         ))}
         {remaining > 0 && (
-          <span className="text-xs text-blue-500 dark:text-blue-400 font-medium shrink-0">
+          <span className="text-xs text-primary dark:text-primary font-medium shrink-0">
             +{remaining}
           </span>
         )}
@@ -363,8 +374,8 @@ export default function CategoriesPage() {
         </TableCell>
         <TableCell>
           <span className={isChild
-            ? "text-xs bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300 px-2 py-0.5 rounded"
-            : "text-xs bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300 px-2 py-0.5 rounded"
+            ? "text-xs bg-success-muted text-success-muted-foreground px-2 py-0.5 rounded"
+            : "text-xs bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary px-2 py-0.5 rounded"
           }>
             {isChild ? "子分类" : "父分类"}
           </span>
@@ -386,16 +397,16 @@ export default function CategoriesPage() {
                 className={cn(
                   "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1",
                   category.isPublic
-                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20 dark:hover:bg-emerald-500/20"
-                    : "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20 dark:hover:bg-amber-500/20"
+                    ? "bg-success-muted text-success-muted-foreground ring-success/20 hover:bg-success-muted/60"
+                    : "bg-warning-muted text-warning-muted-foreground ring-warning/20 hover:bg-warning-muted/60"
                 )}
               >
                 {categoryUpdating[category.id] ? (
-                  <Loader2 className="h-3 w-3 animate-spin text-slate-400" />
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                 ) : category.isPublic ? (
-                  <Globe className="h-3 w-3 text-emerald-500" />
+                  <Globe className="h-3 w-3 text-success" />
                 ) : (
-                  <EyeOff className="h-3 w-3 text-amber-500" />
+                  <EyeOff className="h-3 w-3 text-warning" />
                 )}
                 {category.isPublic ? "公开" : "私有"}
                 <ChevronDown className="h-3 w-3 opacity-50" />
@@ -403,19 +414,19 @@ export default function CategoriesPage() {
               {catVisibilityId === category.id && (
                 <div
                   ref={catVisMenuRef}
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
                 >
                   {([
-                    { value: true, label: "公开", Icon: Globe, color: "text-emerald-500" },
-                    { value: false, label: "私有", Icon: EyeOff, color: "text-amber-500" },
+                    { value: true, label: "公开", Icon: Globe, color: "text-success" },
+                    { value: false, label: "私有", Icon: EyeOff, color: "text-warning" },
                   ] as const).map(({ value, label, Icon, color }) => (
                     <button
                       key={String(value)}
                       onClick={() => handleSetVisibility(category.id, value)}
                       disabled={categoryUpdating[category.id]}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
-                        category.isPublic === value ? "text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-400"
+                        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
+                        category.isPublic === value ? "text-foreground font-medium" : "text-muted-foreground"
                       )}
                     >
                       <Icon className={cn("h-3.5 w-3.5", color)} />
@@ -430,17 +441,17 @@ export default function CategoriesPage() {
             <span className={cn(
               "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ring-1",
               category.isPublic
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20"
-                : "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20"
+                ? "bg-success-muted text-success-muted-foreground ring-success/20"
+                : "bg-warning-muted text-warning-muted-foreground ring-warning/20"
             )}>
               {category.isPublic ? (
                 <>
-                  <Globe className="h-3 w-3 text-emerald-500" />
+                  <Globe className="h-3 w-3 text-success" />
                   公开
                 </>
               ) : (
                 <>
-                  <EyeOff className="h-3 w-3 text-amber-500" />
+                  <EyeOff className="h-3 w-3 text-warning" />
                   私有
                 </>
               )}
@@ -453,7 +464,7 @@ export default function CategoriesPage() {
               {category.user.name || category.user.username || "未知"}
             </span>
           ) : (
-            <span className="text-xs text-slate-400 dark:text-slate-500 italic">—</span>
+            <span className="text-xs text-muted-foreground italic">—</span>
           )}
         </TableCell>
         <TableCell className="text-right">
@@ -505,7 +516,7 @@ export default function CategoriesPage() {
               <span className="text-sm font-medium">{stats.totalCategories} 个分类</span>
             </div>
             <div className="glass-effect rounded-full px-4 py-2 flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-blue-500" />
+              <FolderOpen className="h-4 w-4 text-primary" />
               <span className="text-sm font-medium">{stats.totalLinks} 个链接</span>
             </div>
           </div>
@@ -526,7 +537,7 @@ export default function CategoriesPage() {
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="name">分类名称 <span className="text-red-500">*</span></Label>
+                  <Label htmlFor="name">分类名称 <span className="text-danger">*</span></Label>
                   <Input
                     id="name"
                     value={formData.name}
@@ -667,14 +678,14 @@ export default function CategoriesPage() {
               <button
                 ref={visBtnRef}
                 onClick={() => setVisMenuOpen((prev) => !prev)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-700 transition-all cursor-pointer h-9"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
               >
                 {visibilityFilter === "all" ? (
-                  <Globe className="h-3.5 w-3.5 text-slate-400" />
+                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
                 ) : visibilityFilter === "public" ? (
-                  <Globe className="h-3.5 w-3.5 text-emerald-500" />
+                  <Globe className="h-3.5 w-3.5 text-success" />
                 ) : (
-                  <EyeOff className="h-3.5 w-3.5 text-amber-500" />
+                  <EyeOff className="h-3.5 w-3.5 text-warning" />
                 )}
                 {visibilityFilter === "all" ? "全部可见性" : visibilityFilter === "public" ? "公开" : "私有"}
                 <ChevronDown className="h-3 w-3 opacity-50" />
@@ -688,12 +699,12 @@ export default function CategoriesPage() {
                     left: (visBtnRef.current?.getBoundingClientRect().left ?? 0) + (visBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
                     transform: "translateX(-50%)",
                   }}
-                  className="z-[9999] min-w-[120px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg py-1"
+                  className="z-[9999] min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
                 >
                   {([
-                    { value: "all", label: "全部", Icon: Globe, color: "text-slate-400" },
-                    { value: "public", label: "公开", Icon: Globe, color: "text-emerald-500" },
-                    { value: "private", label: "私有", Icon: EyeOff, color: "text-amber-500" },
+                    { value: "all", label: "全部", Icon: Globe, color: "text-muted-foreground" },
+                    { value: "public", label: "公开", Icon: Globe, color: "text-success" },
+                    { value: "private", label: "私有", Icon: EyeOff, color: "text-warning" },
                   ] as const).map(({ value, label, Icon, color }) => (
                     <button
                       key={value}
@@ -702,10 +713,10 @@ export default function CategoriesPage() {
                         setVisMenuOpen(false);
                       }}
                       className={cn(
-                        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-50 dark:hover:bg-slate-700",
+                        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
                         visibilityFilter === value
-                          ? "text-slate-900 dark:text-white font-medium"
-                          : "text-slate-600 dark:text-slate-400"
+                          ? "text-foreground font-medium"
+                          : "text-muted-foreground"
                       )}
                     >
                       <Icon className={cn("h-3.5 w-3.5", color)} />
@@ -737,8 +748,16 @@ export default function CategoriesPage() {
               <TableBody>
                 {rootCategories.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
-                      没有分类，创建一个开始吧
+                    <TableCell colSpan={7} className="py-8">
+                      <Empty>
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon">
+                            <Folder className="size-5" />
+                          </EmptyMedia>
+                          <EmptyTitle>没有分类</EmptyTitle>
+                          <EmptyDescription>创建一个分类开始整理你的书签吧</EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -772,18 +791,18 @@ export default function CategoriesPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <AlertTriangle className="h-5 w-5 text-danger" />
               确认删除
             </DialogTitle>
             <DialogDescription className="pt-2">
               <p>
                 确定要删除分类{" "}
-                <strong className="text-slate-800 dark:text-slate-200">
+                <strong className="text-foreground">
                   {deleteTarget?.name}
                 </strong>
                 {" "}吗？
               </p>
-              <p className="mt-2 text-red-500 dark:text-red-400 text-sm">
+              <p className="mt-2 text-danger text-sm">
                 此操作不可撤销，该分类下的所有链接将被同时删除。
               </p>
             </DialogDescription>

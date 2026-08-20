@@ -100,27 +100,27 @@ export function CategoryLinkManager({
       {/* 触发器 */}
       <button
         type="button"
-        className="flex items-center gap-1.5 min-h-[36px] w-full px-3 py-1.5 text-left rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+        className="flex items-center gap-1.5 min-h-[36px] w-full px-3 py-1.5 text-left rounded-lg border border-input bg-background hover:border-primary dark:hover:border-primary transition-colors"
         onClick={() => {
           setSearch("");
           setOpen((prev) => !prev);
         }}
       >
         {previewLinks.length === 0 ? (
-          <span className="text-xs text-slate-400 italic">选择链接…</span>
+          <span className="text-xs text-muted-foreground italic">选择链接…</span>
         ) : (
           <div className="flex flex-wrap items-center gap-1 overflow-hidden">
             {displayLinks.map((link) => (
               <span
                 key={link.id}
-                className="inline-block max-w-[80px] truncate text-xs bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded"
+                className="inline-block max-w-[80px] truncate text-xs bg-primary/10 dark:bg-primary/10 text-primary px-1.5 py-0.5 rounded"
                 title={link.title}
               >
                 {link.title}
               </span>
             ))}
             {remaining > 0 && (
-              <span className="text-xs text-slate-400 font-medium shrink-0">
+              <span className="text-xs text-muted-foreground font-medium shrink-0">
                 +{remaining}
               </span>
             )}
@@ -130,9 +130,9 @@ export function CategoryLinkManager({
 
       {/* 下拉面板 */}
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-full min-w-[280px] border rounded-xl bg-white dark:bg-slate-800 shadow-xl p-2 space-y-2">
+        <div className="absolute top-full left-0 mt-1 z-50 w-full min-w-[280px] border rounded-xl bg-card shadow-xl p-2 space-y-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="搜索链接标题…"
               value={search}
@@ -145,7 +145,7 @@ export function CategoryLinkManager({
             {inCategory.map((link) => (
               <label
                 key={link.id}
-                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
+                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
               >
                 <Checkbox
                   checked={checked.has(link.id)}
@@ -163,7 +163,7 @@ export function CategoryLinkManager({
             {notInCategory.map((link) => (
               <label
                 key={link.id}
-                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
+                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
               >
                 <Checkbox
                   checked={checked.has(link.id)}
@@ -179,7 +179,7 @@ export function CategoryLinkManager({
               </label>
             ))}
             {inCategory.length === 0 && notInCategory.length === 0 && (
-              <p className="text-xs text-slate-400 text-center py-4">
+              <p className="text-xs text-muted-foreground text-center py-4">
                 未找到匹配的链接
               </p>
             )}

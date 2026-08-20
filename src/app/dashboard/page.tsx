@@ -50,13 +50,13 @@ export default function DashboardPage() {
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="stat-card p-6 animate-pulse">
                 <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700" />
-                  <div className="h-5 w-12 rounded-full bg-slate-200 dark:bg-slate-700" />
+                  <div className="w-12 h-12 rounded-xl bg-muted" />
+                  <div className="h-5 w-12 rounded-full bg-muted" />
                 </div>
-                <div className="h-9 w-16 rounded bg-slate-200 dark:bg-slate-700 mb-2" />
-                <div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700" />
+                <div className="h-9 w-16 rounded bg-muted mb-2" />
+                <div className="h-4 w-20 rounded bg-muted" />
                 <div className="mt-4 pt-4 border-t border-border/50">
-                  <div className="h-4 w-full rounded bg-slate-200 dark:bg-slate-700" />
+                  <div className="h-4 w-full rounded bg-muted" />
                 </div>
               </div>
             ))}
@@ -67,9 +67,9 @@ export default function DashboardPage() {
           <div className="stat-card p-6" style={{ "--icon-color": "#3b82f6" } as React.CSSProperties}>
             <div className="flex items-start justify-between mb-4">
               <div className="stat-icon-wrapper" style={{ background: "rgba(59, 130, 246, 0.1)", "--icon-color": "#3b82f6" } as React.CSSProperties}>
-                <Link2 className="h-6 w-6 text-blue-500" style={{ color: "#3b82f6" }} />
+                <Link2 className="h-6 w-6 text-primary" style={{ color: "#3b82f6" }} />
               </div>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-primary/10 text-primary dark:text-primary">
                 链接
               </span>
             </div>
@@ -111,9 +111,9 @@ export default function DashboardPage() {
           <div className="stat-card p-6" style={{ "--icon-color": "#10b981" } as React.CSSProperties}>
             <div className="flex items-start justify-between mb-4">
               <div className="stat-icon-wrapper" style={{ background: "rgba(16, 185, 129, 0.1)" } as React.CSSProperties}>
-                <Globe className="h-6 w-6 text-emerald-500" style={{ color: "#10b981" }} />
+                <Globe className="h-6 w-6 text-success" style={{ color: "var(--color-success)" }} />
               </div>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-success/10 text-success-muted-foreground">
                 公开
               </span>
             </div>
@@ -135,9 +135,9 @@ export default function DashboardPage() {
           <div className="stat-card p-6" style={{ "--icon-color": "#f59e0b" } as React.CSSProperties}>
             <div className="flex items-start justify-between mb-4">
               <div className="stat-icon-wrapper" style={{ background: "rgba(245, 158, 11, 0.1)" } as React.CSSProperties}>
-                <Lock className="h-6 w-6 text-amber-500" style={{ color: "#f59e0b" }} />
+                <Lock className="h-6 w-6 text-warning" style={{ color: "var(--color-warning)" }} />
               </div>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-warning/10 text-warning-muted-foreground">
                 私有
               </span>
             </div>
@@ -165,20 +165,20 @@ export default function DashboardPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <Link href="/dashboard/links" className="block">
-              <div 
+              <div
                 className="action-card group cursor-pointer"
                 style={{ "--accent-color": "#3b82f6" } as React.CSSProperties}
               >
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Link2 className="h-6 w-6 text-blue-500" />
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Link2 className="h-6 w-6 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold mb-1 group-hover:text-blue-500 transition-colors" style={{ fontFamily: "var(--font-space-grotesk)" }}>链接管理</h3>
+                    <h3 className="font-semibold mb-1 group-hover:text-primary transition-colors" style={{ fontFamily: "var(--font-space-grotesk)" }}>链接管理</h3>
                     <p className="text-sm text-muted-foreground">添加、编辑、删除和整理你的书签链接</p>
                   </div>
                 </div>
-                <div className="mt-4 flex items-center text-sm text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="mt-4 flex items-center text-sm text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                   <span>开始管理</span>
                   <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

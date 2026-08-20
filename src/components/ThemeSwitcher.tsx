@@ -49,7 +49,7 @@ export function ThemeSwitcher() {
         variant="ghost"
         size="icon"
         disabled
-        className="text-slate-500 bg-slate-100/60"
+        className="text-muted-foreground bg-muted/60"
       >
         <Monitor className="h-[18px] w-[18px]" />
       </Button>
@@ -63,7 +63,7 @@ export function ThemeSwitcher() {
       variant="ghost"
       size="icon"
       onClick={toggleTheme}
-      className="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 bg-slate-100/60 dark:bg-slate-700/60 hover:bg-blue-50 dark:hover:bg-blue-500/20"
+      className="text-muted-foreground hover:text-foreground bg-muted/60 dark:bg-muted/60 hover:bg-primary/10 dark:hover:bg-primary/20"
       title={getThemeLabel(theme)}
     >
       <Icon className="h-[18px] w-[18px]" />

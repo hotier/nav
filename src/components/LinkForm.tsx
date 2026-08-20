@@ -133,7 +133,9 @@ export function LinkForm({
     setIsRecognizing(true);
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
+      // 识别涉及 HTML 抓取 + faviconsnap 等多个外部请求，且慢站点在你的网络环境下可能耗时较久，
+      // 给足 25 秒（服务端整体硬超时 12 秒），避免误报“识别超时”
+      const timer = setTimeout(() => controller.abort(), 25000);
       const response = await fetch("/api/links/recognize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -237,7 +239,7 @@ export function LinkForm({
       </div>
       <div>
         <Label htmlFor="link-cat">
-          分类 <span className="text-red-500">*</span>
+          分类 <span className="text-danger">*</span>
         </Label>
         <Select
           value={formData.categoryId}
@@ -252,12 +254,12 @@ export function LinkForm({
                 <span className="flex items-center gap-2">
                   <span>{cat.name}</span>
                   {cat.isPublic ? (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-success-muted text-success-muted-foreground">
                       <Globe className="h-2.5 w-2.5" />
                       公开
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-warning-muted text-warning-muted-foreground">
                       <Lock className="h-2.5 w-2.5" />
                       私有
                     </span>

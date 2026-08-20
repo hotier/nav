@@ -192,7 +192,7 @@ export default function AccountPage() {
                         }}
                       />
                     ) : (
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-sky-500 flex items-center justify-center text-white text-xl font-medium">
+                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-sky-500 flex items-center justify-center text-white text-xl font-medium">
                         {profile?.name?.[0]?.toUpperCase() || profile?.username?.[0]?.toUpperCase() || "U"}
                       </div>
                     )}
@@ -209,7 +209,7 @@ export default function AccountPage() {
                         href="https://img.hotier.cc.cd/"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline"
+                        className="text-primary hover:underline"
                       >
                         img.hotier.cc.cd
                       </a>
@@ -219,7 +219,7 @@ export default function AccountPage() {
                       <button
                         type="button"
                         onClick={() => setImage("")}
-                        className="text-xs text-muted-foreground hover:text-red-500 mt-1"
+                        className="text-xs text-muted-foreground hover:text-danger mt-1"
                       >
                         清除头像
                       </button>
