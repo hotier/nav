@@ -43,6 +43,8 @@ model User {
   username      String?   @unique
   password      String?
   role          String    @default("user")
+  // 系统级管理员：由项目初始化（seed）自动创建，不可删除、不可降级
+  isSystemAdmin Boolean   @default(false)
   tokenVersion  Int       @default(0)
   accounts      Account[]
   sessions      Session[]
@@ -72,6 +74,7 @@ model Category {
   icon      String?
   parentId  String?
   isPublic  Boolean  @default(false)
+  isHidden  Boolean  @default(false)
   userId    String?
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
@@ -96,6 +99,7 @@ model Link {
   categoryId   String
   userId       String
   isPrivate    Boolean  @default(false)
+  isHidden     Boolean  @default(false)
   isPinned     Boolean  @default(false)
   sortOrder    Int      @default(0)
   status       String?  @default("active")

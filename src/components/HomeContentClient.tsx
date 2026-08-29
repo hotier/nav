@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/empty";
 import { useEffect, useState } from "react";
 import type { Link as LinkType, Category } from "@/types";
-import { Home, Loader2 } from "lucide-react";
+import { Home, Loader2, Bookmark } from "lucide-react";
 
 interface Props {
   userId: string | null;
@@ -31,7 +31,8 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
 
   const { data: catData, loading: catLoading } = useDataCache({ configs: [
     {
-      name: "Category",
+      name: "Category:v4",
+      versionTable: "Category",
       fetch: () =>
         fetch("/api/categories")
           .then((r) => r.json())
@@ -44,7 +45,8 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
   ], userId });
 
   const { items: links, total, hasMore, isLoadingMore, loading: linksLoading, sentinelRef } = useInfiniteScroll<LinkType>({
-    name: "Link",
+    name: "Link:v2",
+    versionTable: "Link",
     userId,
     // 全量加载（个人导航站数据量小）：与分类页共用同一份数据、缓存与版本号，
     // 分类页在前端按 categoryId 过滤。消除"多视图各自分页缓存 → 一处修改、别处不同步"的问题。
@@ -55,7 +57,7 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
 
-  const categories = Array.isArray(catData["Category"]) ? (catData["Category"] as Category[]) : [];
+  const categories = Array.isArray(catData["Category:v4"]) ? (catData["Category:v4"] as Category[]) : [];
   const displayCount = linkCount || total || links.length;
 
   // 优先显示骨架：只要还在加载（未水合 / 链接加载中）就先展示骨架，
@@ -79,7 +81,9 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
         </div>
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="default" className="text-5xl">📭</EmptyMedia>
+            <EmptyMedia variant="default">
+              <Bookmark className="size-12 text-muted-foreground/50" />
+            </EmptyMedia>
             <EmptyTitle>还没有书签</EmptyTitle>
             <EmptyDescription>登录后可以添加和管理书签</EmptyDescription>
           </EmptyHeader>

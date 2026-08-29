@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/empty";
 import type { Category, Link as LinkType } from "@/types";
 import { readPageCache, writePageCache, subscribeDataChanged } from "@/lib/cache-client";
+import { Search, SearchX } from "lucide-react";
 
 export default function SearchContent() {
   const searchParams = useSearchParams();
@@ -24,14 +25,15 @@ export default function SearchContent() {
   // 分类走统一缓存
   const { data: cacheData } = useDataCache({ configs: [
     {
-      name: "Category",
+      name: "Category:v4",
+      versionTable: "Category",
       fetch: () =>
         fetch("/api/categories")
           .then((r) => r.json())
           .then((d: Category[]) => ({ data: d, total: d.length })),
     },
   ] });
-  const categories = (cacheData["Category"] || []) as Category[];
+  const categories = (cacheData["Category:v4"] || []) as Category[];
 
   // 搜索结果（query 驱动，不走全局版本缓存）
   const [links, setLinks] = useState<LinkType[]>([]);
@@ -110,7 +112,9 @@ export default function SearchContent() {
       {!query ? (
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="default" className="text-5xl">🔍</EmptyMedia>
+            <EmptyMedia variant="default">
+              <Search className="size-12 text-muted-foreground/50" />
+            </EmptyMedia>
             <EmptyTitle>输入关键词搜索书签</EmptyTitle>
             <EmptyDescription>在上方搜索框中输入关键词并按回车</EmptyDescription>
           </EmptyHeader>
@@ -118,7 +122,9 @@ export default function SearchContent() {
       ) : links.length === 0 && !isLoading ? (
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="default" className="text-5xl">🔍</EmptyMedia>
+            <EmptyMedia variant="default">
+              <SearchX className="size-12 text-muted-foreground/50" />
+            </EmptyMedia>
             <EmptyTitle>未找到相关链接</EmptyTitle>
             <EmptyDescription>尝试其他关键词</EmptyDescription>
           </EmptyHeader>

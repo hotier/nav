@@ -8,6 +8,7 @@ export interface Link {
   categoryId: string;
   userId: string;
   isPrivate: boolean;
+  isHidden: boolean;
   isPinned: boolean;
   sortOrder: number;
   status: string | null;
@@ -29,6 +30,7 @@ export interface Category {
   icon: string | null;
   parentId: string | null;
   isPublic: boolean;
+  isHidden: boolean;
   userId: string | null;
   sortOrder: number;
   createdAt: Date;
@@ -65,6 +67,7 @@ export interface UpdateLinkInput {
   favicon?: string;
   categoryId?: string;
   isPrivate?: boolean;
+  isHidden?: boolean;
   isPinned?: boolean;
   sortOrder?: number;
 }
@@ -81,6 +84,7 @@ export interface UpdateCategoryInput {
   icon?: string;
   parentId?: string;
   sortOrder?: number;
+  isHidden?: boolean;
 }
 
 export interface SearchResult {

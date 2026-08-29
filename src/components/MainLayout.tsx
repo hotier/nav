@@ -10,11 +10,13 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Search,
   X,
   User,
 } from "lucide-react";
 import { SiteFooter } from "@/components/SiteFooter";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { LinkForm } from "@/components/LinkForm";
 import { cn, proxyImageUrl } from "@/lib/utils";
@@ -25,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { notifyDataChanged } from "@/lib/cache-client";
+import { useUserAvatar } from "@/hooks/useUserAvatar";
 import toast from "react-hot-toast";
 
 interface MainLayoutProps {
@@ -50,6 +53,7 @@ interface MainLayoutProps {
 
 export function MainLayout({ children, categories }: MainLayoutProps) {
   const { data: session } = useSession();
+  const avatarUrl = useUserAvatar();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -132,6 +136,14 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
 
   const isLoggedIn = !!session;
 
+  // 触发搜索：回车与搜索按钮共用
+  const handleSearch = () => {
+    const q = searchQuery.trim();
+    if (q) {
+      router.push(`/search?q=${encodeURIComponent(q)}`);
+    }
+  };
+
   const handleAddLink = async (data: {
     title: string;
     url: string;
@@ -182,28 +194,37 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
 
             {/* Center - Search */}
             <div className="flex-1 max-w-xl px-8 hidden sm:block">
-              <div className="relative">
-                <input
-                  ref={searchRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && searchQuery.trim()) {
-                      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-                    }
-                  }}
-                  placeholder="搜索书签… (按 / 快速聚焦)"
-                  className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-muted/80 text-foreground dark:bg-muted/50 dark:border-border dark:placeholder-muted-foreground focus:bg-background dark:focus:bg-muted/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-sm"
-                />
+              <div className="flex items-center h-10 rounded-xl border border-border bg-muted/80 text-foreground dark:bg-muted/50 dark:border-border dark:placeholder-muted-foreground focus-within:bg-background dark:focus-within:bg-muted/80 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring transition-all overflow-hidden">
                 <svg
-                  className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+                  className="ml-3 h-4 w-4 text-muted-foreground shrink-0"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleSearch();
+                    }
+                  }}
+                  placeholder="搜索书签… (按 / 快速聚焦)"
+                  className="flex-1 min-w-0 h-full bg-transparent px-3 text-sm placeholder:text-muted-foreground focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleSearch}
+                  disabled={!searchQuery.trim()}
+                  className="self-stretch flex items-center gap-1 px-3.5 bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 active:bg-primary/80 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span>搜索</span>
+                </button>
               </div>
             </div>
 
@@ -213,34 +234,47 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
 
               {isLoggedIn ? (
                 <div ref={avatarRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleAvatarClick}>
-                  <div className={cn(session?.user?.role === "admin" && "admin-avatar-ring")}>
+                  <div className={cn(session?.user?.role === "admin" ? "admin-avatar-ring" : "user-avatar-ring")}>
                     <button
-                      className="flex items-center justify-center w-9 h-9 rounded-full font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden cursor-pointer bg-gradient-to-br from-primary to-sky-500 text-white"
+                      type="button"
+                      className="flex items-center justify-center w-9 h-9 rounded-full overflow-hidden cursor-pointer shadow-lg hover:shadow-xl transition-all focus-visible:outline-none"
                       title="用户菜单"
                     >
-                      {session?.user?.image ? (
-                        <img src={proxyImageUrl(session.user.image)} alt="" className="w-full h-full object-cover rounded-full" />
-                      ) : (
-                        session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || "U"
-                      )}
+                      <Avatar className="h-full w-full">
+                        {avatarUrl ? (
+                          <AvatarImage src={proxyImageUrl(avatarUrl, 128)} alt="" className="object-cover" />
+                        ) : (
+                          <AvatarFallback className="bg-gradient-to-br from-primary to-sky-500 text-white font-medium text-sm">
+                            {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || "U"}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
                     </button>
-                    {session?.user?.role === "admin" && <span className="admin-avatar-badge">管</span>}
+                    {session?.user?.role === "admin" ? (
+                      <span className="admin-avatar-badge">管</span>
+                    ) : (
+                      <span className="user-avatar-badge">普</span>
+                    )}
                   </div>
                   {/* Dropdown */}
                   {userMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-40 bg-card dark:bg-card rounded-xl shadow-xl border border-border py-1 z-50">
+                    <div className="absolute right-0 top-full mt-2 w-32 bg-card dark:bg-card rounded-xl shadow-xl border border-border py-1 z-50">
                       <div className="px-3 py-2 border-b border-border">
                         <p className="text-sm font-medium text-foreground truncate">
                           {session?.user?.name || "用户"}
                         </p>
                       </div>
                       <Link
-                        href="/dashboard"
+                        href={pathname === "/" ? "/dashboard" : "/"}
                         className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
                         onClick={() => { setUserMenuOpen(false); setMenuPinned(false); }}
                       >
-                        <LayoutDashboard className="h-4 w-4" />
-                        管理后台
+                        {pathname === "/" ? (
+                          <LayoutDashboard className="h-4 w-4" />
+                        ) : (
+                          <Home className="h-4 w-4" />
+                        )}
+                        {pathname === "/" ? "管理后台" : "回到首页"}
                       </Link>
                       <Link
                         href="/dashboard/account"
@@ -413,7 +447,7 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
 
       {/* Add Link Dialog */}
       <Dialog open={showAddLink} onOpenChange={setShowAddLink}>
-        <DialogContent>
+        <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>添加链接</DialogTitle>
           </DialogHeader>

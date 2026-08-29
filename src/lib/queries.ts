@@ -80,6 +80,7 @@ export const getCategories = cache(async (userId?: string) => {
       include: {
         _count: { select: { links: true } },
         children: {
+          where: buildCategoryWhere(userId),
           include: { _count: { select: { links: true } } },
         },
       },

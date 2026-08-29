@@ -9,9 +9,9 @@
  *   - 本模块保持纯函数，无 IO。
  *
  * 键结构约定：
- *   links:v2:ver{N}:user:{uid|anon}:{pub|mgmt}:{catId|all}:p{page}:{sort}
- *   categories:v2:ver{N}:user:{uid|anon}:{pub|mgmt}
- *   links:count:v2:ver{N}:user:{uid|anon}
+ *   links:v3:ver{N}:user:{uid|anon}:{pub|mgmt}:{catId|all}:p{page}:{sort}
+ *   categories:v4:ver{N}:user:{uid|anon}:{pub|mgmt}
+ *   links:count:v3:ver{N}:user:{uid|anon}
  *   dashboard:stats:v2:ver{N}:{userId}
  *
  * 不变量：任何键都带 ver 段；任何写操作必须 await incrementTableVersion（写路径）。
@@ -37,19 +37,20 @@ export function linkListKey(
   const uid = normUid(userId);
   const scopeKey = cacheScope(scope);
   const cat = categoryId || "all";
-  return `links:v2:ver${version}:user:${uid}:${scopeKey}:${cat}:p${page}:${sort}`;
+  return `links:v3:ver${version}:user:${uid}:${scopeKey}:${cat}:p${page}:${sort}`;
 }
 
-/** 分类列表键（GET /api/categories 的 SWR 键） */
+/** 分类列表键（GET /api/categories 的 SWR 键）
+ *  v3：权限规则变更（管理员不再可见普通用户私有分类）后 bump，使旧缓存失效 */
 export function categoryKey(version: number, userId: string | undefined, scope: LinkViewScope): string {
   const uid = normUid(userId);
   const scopeKey = cacheScope(scope);
-  return `categories:v2:ver${version}:user:${uid}:${scopeKey}`;
+  return `categories:v4:ver${version}:user:${uid}:${scopeKey}`;
 }
 
 /** 链接计数键（getLinkCount） */
 export function linkCountKey(version: number, userId: string | undefined): string {
-  return `links:count:v2:ver${version}:user:${normUid(userId)}`;
+  return `links:count:v3:ver${version}:user:${normUid(userId)}`;
 }
 
 /** 仪表盘统计键（随 Link 数据版本翻页，DashboardStats 版本由 incrementTableVersion 联动维护） */

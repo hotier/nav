@@ -227,7 +227,14 @@ async function main() {
   let passwordChanged = false;
 
   if (existingAdmin) {
-    // 管理员已存在 → 仅在密码来源变更时更新密码
+    // 管理员已存在 → 补标为系统级管理员（幂等，兼容升级前的存量部署）
+    await prisma.user.update({
+      where: { id: existingAdmin.id },
+      data: {
+        isSystemAdmin: true,
+      },
+    });
+    // 仅在密码来源变更时更新密码
     if (passwordSource !== "db") {
       const hashedPassword = await bcrypt.hash(adminPassword, 10);
       await prisma.user.update({
@@ -242,7 +249,7 @@ async function main() {
       passwordChanged = true;
     }
   } else {
-    // 首次创建管理员
+    // 首次创建管理员（系统级管理员）
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
     await prisma.user.create({
       data: {
@@ -251,6 +258,7 @@ async function main() {
         email: ADMIN_EMAIL,
         password: hashedPassword,
         role: "admin",
+        isSystemAdmin: true,
       },
     });
   }

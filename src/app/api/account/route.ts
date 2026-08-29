@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { swr, deleteCached } from "@/lib/cache";
+import { incrementTableVersion } from "@/lib/queries";
+import { deleteUserAuthCache } from "@/lib/user-cache";
 
 // GET: 获取当前用户信息
 export async function GET() {
@@ -124,6 +126,14 @@ export async function PUT(request: Request) {
 
     // 清除当前用户缓存，下次 GET 自动从库刷新
     deleteCached(`account:${session.user.id}`);
+
+    // 修改密码会递增 tokenVersion → 清除认证缓存，旧 token 立即失效
+    if (updateData.tokenVersion !== undefined) {
+      await deleteUserAuthCache(session.user.id);
+    }
+
+    // 用户信息（名称/头像）变更影响用户列表与链接创建人展示 → 递增 User 版本（联动 Link/DashboardStats）
+    await incrementTableVersion("User");
 
     return NextResponse.json(updated);
   } catch (error) {

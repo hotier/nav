@@ -7,8 +7,10 @@ import { AdminLayout } from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { readPageCache, writePageCache } from "@/lib/cache-client";
+import { readPageCache, writePageCache, notifyDataChanged } from "@/lib/cache-client";
 import { proxyImageUrl } from "@/lib/utils";
 import toast from "react-hot-toast";
 
@@ -90,6 +92,10 @@ export default function AccountPage() {
         const updated = await res.json();
         setProfile(updated);
         await update(body); // 传入变更数据，JWT callback 即时更新 session
+        // 用户信息（名称/头像）变更影响用户列表展示 → 通知已打开页面刷新
+        notifyDataChanged("User");
+        // 广播不回传本页，额外派发本地事件让当前页顶部导航栏头像即时刷新
+        window.dispatchEvent(new CustomEvent("nav:user-updated"));
         toast.success("个人信息已更新");
       } else {
         const err = await res.json();
@@ -166,6 +172,43 @@ export default function AccountPage() {
             <p className="text-muted-foreground">管理你的个人信息和安全设置</p>
           </div>
 
+        {profile === null ? (
+          <div className="stagger-grid grid gap-6 md:grid-cols-2">
+            {/* 基本信息骨架 */}
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-5 w-28" />
+                <Skeleton className="h-3 w-44" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <Skeleton className="h-16 w-16 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-9 w-full" />
+                    <Skeleton className="h-3 w-56" />
+                  </div>
+                </div>
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+              </CardContent>
+            </Card>
+            {/* 修改密码骨架 */}
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-5 w-28" />
+                <Skeleton className="h-3 w-36" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
         <div className="stagger-grid grid gap-6 md:grid-cols-2">
           {/* 基本信息 */}
           <Card>
@@ -182,20 +225,15 @@ export default function AccountPage() {
                 <Label>头像</Label>
                 <div className="flex items-center gap-4">
                   <div className="relative">
-                    {image ? (
-                      <img
-                        src={proxyImageUrl(image)}
-                        alt="头像预览"
-                        className="w-16 h-16 rounded-full object-cover border-2 border-border"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-sky-500 flex items-center justify-center text-white text-xl font-medium">
-                        {profile?.name?.[0]?.toUpperCase() || profile?.username?.[0]?.toUpperCase() || "U"}
-                      </div>
-                    )}
+                    <Avatar className="w-16 h-16 border-2 border-border">
+                      {image ? (
+                        <AvatarImage src={proxyImageUrl(image, 128)} alt="头像预览" className="object-cover" />
+                      ) : (
+                        <AvatarFallback className="bg-gradient-to-br from-primary to-sky-500 text-white text-xl font-medium">
+                          {profile?.name?.[0]?.toUpperCase() || profile?.username?.[0]?.toUpperCase() || "U"}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
                   </div>
                   <div className="flex-1">
                     <Input
@@ -336,6 +374,7 @@ export default function AccountPage() {
             </CardContent>
           </Card>
         </div>
+        )}
       </div>
     </AdminLayout>
   );

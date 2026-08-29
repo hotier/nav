@@ -6,6 +6,7 @@ import { incrementTableVersion, getTableVersion } from "@/lib/queries";
 import { swr } from "@/lib/cache";
 import { buildLinkWhere, canAddLinkToCategory, type LinkViewScope } from "@/lib/permissions";
 import { cleanUrl } from "@/lib/recognize-url";
+import { probeImageUrl } from "@/lib/probe-image";
 import { linkListKey } from "@/lib/cache-keys";
 
 export async function GET(request: Request) {
@@ -84,11 +85,21 @@ export async function POST(request: Request) {
     // 清理 URL：去首尾空白、去尾部反斜杠
     result.data.url = cleanUrl(result.data.url);
 
+    // 图标校验：打不开 / 非图片 / 尺寸过小（如 1×1 占位图）→ 打印日志并清空图标，
+    // 前端自动显示默认图标（首字母渐变块），不阻塞保存
+    if (result.data.favicon) {
+      const probe = await probeImageUrl(result.data.favicon);
+      if (!probe.ok) {
+        console.warn(`[favicon] 链接图标无效已忽略（${probe.reason}）: ${result.data.favicon}`);
+        result.data.favicon = "";
+      }
+    }
+
     const category = await prisma.category.findFirst({
       where: {
         id: result.data.categoryId,
       },
-      select: { id: true, userId: true, isPublic: true },
+      select: { id: true, userId: true, isPublic: true, isHidden: true },
     });
 
     if (!category) {

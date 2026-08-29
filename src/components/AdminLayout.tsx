@@ -19,8 +19,10 @@ import {
   Users,
 } from "lucide-react";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn, proxyImageUrl } from "@/lib/utils";
 import { SiteFooter } from "@/components/SiteFooter";
+import { useUserAvatar } from "@/hooks/useUserAvatar";
 import { useState, useEffect, useRef } from "react";
 
 interface AdminLayoutProps {
@@ -45,6 +47,7 @@ const navItems = [
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { data: session, status } = useSession();
+  const avatarUrl = useUserAvatar();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -200,21 +203,30 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* User Avatar with Dropdown */}
             <div ref={avatarRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleAvatarClick}>
-              <div className={cn(session.user?.role === "admin" && "admin-avatar-ring")}>
+              <div className={cn(session.user?.role === "admin" ? "admin-avatar-ring" : "user-avatar-ring")}>
                 <button
-                  className="flex items-center justify-center w-9 h-9 rounded-full font-medium text-sm shadow-lg hover:shadow-xl transition-all overflow-hidden cursor-pointer bg-gradient-to-br from-primary to-sky-500 text-white"
+                  type="button"
+                  className="flex items-center justify-center w-9 h-9 rounded-full overflow-hidden cursor-pointer shadow-lg hover:shadow-xl transition-all focus-visible:outline-none"
                   title="用户菜单"
                 >
-                  {session.user?.image ? (
-                    <img src={proxyImageUrl(session.user.image)} alt="" className="w-full h-full object-cover rounded-full" />
-                  ) : (
-                    session.user?.name?.[0]?.toUpperCase() || session.user?.email?.[0]?.toUpperCase() || "U"
-                  )}
+                  <Avatar className="h-full w-full">
+                    {avatarUrl ? (
+                      <AvatarImage src={proxyImageUrl(avatarUrl, 128)} alt="" className="object-cover" />
+                    ) : (
+                      <AvatarFallback className="bg-gradient-to-br from-primary to-sky-500 text-white font-medium text-sm">
+                        {session.user?.name?.[0]?.toUpperCase() || session.user?.email?.[0]?.toUpperCase() || "U"}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
                 </button>
-                {session.user?.role === "admin" && <span className="admin-avatar-badge">管</span>}
+                {session.user?.role === "admin" ? (
+                  <span className="admin-avatar-badge">管</span>
+                ) : (
+                  <span className="user-avatar-badge">普</span>
+                )}
               </div>
               {userMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-40 bg-card dark:bg-card rounded-xl shadow-xl border border-border py-1 z-50">
+                <div className="absolute right-0 top-full mt-2 w-32 bg-card dark:bg-card rounded-xl shadow-xl border border-border py-1 z-50">
                   <div className="px-3 py-2 border-b border-border">
                     <p className="text-sm font-medium text-foreground truncate">
                       {session.user?.name || "用户"}

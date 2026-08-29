@@ -1,17 +1,33 @@
+import { ICON_CACHE_PREFIX, getRedis } from "@/lib/redis";
+import { isImageMagicBytes, guessImageContentType } from "@/lib/image-magic";
+import sharp from "sharp";
+
 /**
  * 服务端图片代理 — 统一通过服务端请求外部图片（图标、头像等）
- * GET /api/favicon?url=<encoded_url>
+ * GET /api/favicon?url=<encoded_url>[&size=<像素>]
  *
  * 设计要点：
  * - 伪装完整浏览器头（UA + Referer 指向目标站自身 + Accept），降低防盗链拒绝率
  * - 内容判定：content-type 优先，其次魔数；SVG 因常见 text/xml / 注释头等形态需宽松匹配
  * - 失败不静默：console.warn 记录目标与原因，便于诊断"URL 明明能访问却显示默认图标"
+ * - size（可选）：头像等场景传入目标最长边像素（8~1024），用 sharp 等比缩小（只缩不放），
+ *   降低传输体积与客户端解码开销；仅对静态栅格图 PNG/JPEG/WebP 生效，
+ *   GIF 动图 / SVG 矢量 / ICO 多尺寸容器原样透传。缩小失败自动回退原图。
+ *
+ * 缓存：启用 Redis 时按「完整 URL + size」缓存图片字节（头像/图标同域名不同内容，不能按域名键），
+ * TTL 7 天；超过 400KB 的图片不缓存（Upstash REST 单请求上限 1MB，base64 膨胀需留余量）。
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
+  const rawSize = searchParams.get("size");
+  // 可选参数：目标最长边像素（8~1024），用于把头像等比缩小到显示尺寸
+  const size = rawSize ? Number(rawSize) : 0;
 
   if (!url) {
+    return new Response(null, { status: 400 });
+  }
+  if (size && (!Number.isInteger(size) || size < 8 || size > 1024)) {
     return new Response(null, { status: 400 });
   }
 
@@ -22,6 +38,27 @@ export async function GET(request: Request) {
     referer = `${target.protocol}//${target.host}/`;
   } catch {
     return new Response(null, { status: 400 });
+  }
+
+  // Redis 图片字节缓存：命中直接返回，避免每次回源外部站点
+  // 缓存错误一律吞掉，回退到真实抓取
+  const client = getRedis();
+  // 缓存 key 含 size：同一 URL 的原始图与缩放图互不污染
+  const cacheKey = ICON_CACHE_PREFIX + url + (size ? `@${size}` : "");
+  if (client) {
+    try {
+      const cached = await client.get<{ ct: string; b64: string }>(cacheKey);
+      if (cached?.b64 && cached.ct) {
+        return new Response(Buffer.from(cached.b64, "base64"), {
+          headers: {
+            "Content-Type": cached.ct,
+            "Cache-Control": "public, max-age=86400, immutable",
+          },
+        });
+      }
+    } catch {
+      // 忽略缓存异常
+    }
   }
 
   try {
@@ -50,7 +87,7 @@ export async function GET(request: Request) {
     const isImage = (
       contentType.startsWith("image/") ||
       contentType.includes("svg") ||
-      isImageMagicBytes(buffer)
+      isImageMagicBytes(new Uint8Array(buffer))
     );
 
     if (!isImage) {
@@ -61,9 +98,36 @@ export async function GET(request: Request) {
     // 如果是已知的 icon 类型但 content-type 不标准，修正 content-type
     const finalContentType = contentType.startsWith("image/")
       ? contentType
-      : guessImageContentType(buffer) || (contentType.includes("svg") ? "image/svg+xml" : "image/png");
+      : guessImageContentType(new Uint8Array(buffer)) || (contentType.includes("svg") ? "image/svg+xml" : "image/png");
 
-    return new Response(buffer, {
+    // 可选：按 size 等比缩小（仅静态栅格图 PNG/JPEG/WebP；GIF 动图/SVG 矢量/ICO 原样透传）
+    let outBuffer: Buffer | ArrayBuffer = buffer;
+    if (size && isResizableRaster(finalContentType)) {
+      try {
+        outBuffer = await sharp(buffer)
+          .resize({ width: size, height: size, fit: "inside", withoutEnlargement: true })
+          .toBuffer();
+      } catch (err) {
+        console.warn(`[favicon] 图片缩放失败，回退原图: ${url}`, (err as Error).message);
+        outBuffer = buffer;
+      }
+    }
+
+    // 图片字节写入 Redis 缓存（≤400KB 才缓存：base64 膨胀 + JSON 包裹后需在 Upstash 1MB 限制内）
+    if (client && outBuffer.byteLength < 400 * 1024) {
+      try {
+        const cacheBuf = Buffer.isBuffer(outBuffer) ? outBuffer : Buffer.from(outBuffer);
+        await client.set(
+          cacheKey,
+          JSON.stringify({ ct: finalContentType, b64: cacheBuf.toString("base64") }),
+          { ex: 7 * 86400 }
+        );
+      } catch {
+        // 写缓存失败不影响本次响应
+      }
+    }
+
+    return new Response(outBuffer, {
       headers: {
         "Content-Type": finalContentType,
         // 缓存 1 天，同一图标不重复请求
@@ -76,36 +140,7 @@ export async function GET(request: Request) {
   }
 }
 
-/** 通过文件头魔数判断是否为图片 */
-function isImageMagicBytes(buffer: ArrayBuffer): boolean {
-  const u8 = new Uint8Array(buffer);
-  if (u8.length < 4) return false;
-  // PNG
-  if (u8[0] === 0x89 && u8[1] === 0x50 && u8[2] === 0x4e && u8[3] === 0x47) return true;
-  // JPEG
-  if (u8[0] === 0xff && u8[1] === 0xd8 && u8[2] === 0xff) return true;
-  // GIF
-  if (u8[0] === 0x47 && u8[1] === 0x49 && u8[2] === 0x46 && u8[3] === 0x38) return true;
-  // WebP
-  if (u8[0] === 0x52 && u8[1] === 0x49 && u8[2] === 0x46 && u8[3] === 0x46 &&
-      u8[8] === 0x57 && u8[9] === 0x45 && u8[10] === 0x42 && u8[11] === 0x50) return true;
-  // ICO
-  if (u8[0] === 0x00 && u8[1] === 0x00 && u8[2] === 0x01 && u8[3] === 0x00) return true;
-  // SVG：宽松匹配（前 250 字节内出现 <svg 或 <?xml，兼容注释/BOM/前导空白开头）
-  const head = new TextDecoder().decode(u8.slice(0, 250)).toLowerCase().trim();
-  if (head.startsWith("<?xml") || head.startsWith("<svg") || head.includes("<svg")) return true;
-
-  return false;
-}
-
-/** 根据文件魔数反向推导 content-type；无法识别返回空串由调用方兜底 */
-function guessImageContentType(buffer: ArrayBuffer): string {
-  const u8 = new Uint8Array(buffer);
-  if (u8.length >= 4) {
-    if (u8[0] === 0x89 && u8[1] === 0x50) return "image/png";
-    if (u8[0] === 0xff && u8[1] === 0xd8) return "image/jpeg";
-    if (u8[0] === 0x47 && u8[1] === 0x49) return "image/gif";
-    if (u8[0] === 0x00 && u8[1] === 0x00) return "image/x-icon";
-  }
-  return "";
+/** 是否可用 sharp 等比缩小的静态栅格图（动图/矢量/多尺寸容器不做处理） */
+function isResizableRaster(ct: string): boolean {
+  return ct === "image/png" || ct === "image/jpeg" || ct === "image/webp";
 }

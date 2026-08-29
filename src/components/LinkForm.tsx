@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -12,9 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Globe, Lock } from "lucide-react";
+import { Globe, Lock, PencilSparkles, Pin, PinOff } from "lucide-react";
 import toast from "react-hot-toast";
 import { cleanUrl } from "@/lib/recognize-url";
+import { cn } from "@/lib/utils";
 
 interface Category {
   id: string;
@@ -40,6 +42,10 @@ interface LinkFormProps {
   onCancel?: () => void;
   isSubmitting?: boolean;
   submitLabel?: string;
+  /** 编辑模式：跳过自动识别，直接提交已有数据 */
+  isEdit?: boolean;
+  /** 是否显示置顶开关（管理页已停用置顶功能） */
+  showPinned?: boolean;
 }
 
 function isLinkFormData(data: unknown): data is LinkFormData {
@@ -53,6 +59,8 @@ export function LinkForm({
   onCancel,
   isSubmitting = false,
   submitLabel = "保存",
+  isEdit = false,
+  showPinned = true,
 }: LinkFormProps) {
   // 处理 initialData，可能是完整的 LinkFormData 或只是部分数据
   const safeInitialData: Partial<LinkFormData> = isLinkFormData(initialData) ? initialData : {};
@@ -83,8 +91,9 @@ export function LinkForm({
       return;
     }
 
-    // 如果标题、描述、图标有任一为空，自动识别（5秒超时）
-    if (!formData.title || !formData.description || !formData.favicon) {
+    // 仅新建时，且必填项（标题/URL/分类）存在空缺才自动识别（5秒超时）；
+    // 描述、图标URL 为可选项，缺失不触发识别；编辑模式直接提交已有数据
+    if (!isEdit && (!formData.title || !formData.url || !formData.categoryId)) {
       setIsRecognizing(true);
       try {
         const controller = new AbortController();
@@ -192,7 +201,7 @@ export function LinkForm({
             onChange={(e) => setFormData({ ...formData, url: e.target.value })}
             onBlur={handleUrlClean}
             placeholder="https://example.com"
-            className="flex-1 h-11"
+            className="flex-1"
           />
           {(
             <Button
@@ -200,8 +209,16 @@ export function LinkForm({
               variant="outline"
               onClick={handleRecognize}
               disabled={isRecognizing || !formData.url}
+              className="shrink-0 gap-1.5"
             >
-              {isRecognizing ? "识别中..." : "识别"}
+              {isRecognizing ? (
+                "识别中..."
+              ) : (
+                <>
+                  <PencilSparkles className="h-4 w-4" />
+                  识别
+                </>
+              )}
             </Button>
           )}
         </div>
@@ -229,12 +246,12 @@ export function LinkForm({
       </div>
       <div>
         <Label htmlFor="link-desc">描述</Label>
-        <Input
+        <Textarea
           id="link-desc"
           value={formData.description || ""}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
           placeholder="链接描述（可选）"
-          className="mt-1"
+          className="mt-1 resize-none"
         />
       </div>
       <div>
@@ -270,23 +287,52 @@ export function LinkForm({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Checkbox
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3">
+          {/* 开关开启 = 公开，关闭 = 私有（内部仍以 isPrivate 存储） */}
+          <Switch
             id="link-private"
-            checked={formData.isPrivate}
-            onCheckedChange={(c) => setFormData({ ...formData, isPrivate: !!c })}
+            checked={!formData.isPrivate}
+            onCheckedChange={(c) => setFormData({ ...formData, isPrivate: !c })}
           />
-          <Label htmlFor="link-private">私有</Label>
+          <Label
+            htmlFor="link-private"
+            className={cn(
+              "cursor-pointer inline-flex items-center gap-1.5 transition-colors",
+              formData.isPrivate ? "text-warning" : "text-success"
+            )}
+          >
+            {formData.isPrivate ? (
+              <Lock className="h-3.5 w-3.5" />
+            ) : (
+              <Globe className="h-3.5 w-3.5" />
+            )}
+            {formData.isPrivate ? "私有" : "公开"}
+          </Label>
         </div>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="link-pinned"
-            checked={formData.isPinned}
-            onCheckedChange={(c) => setFormData({ ...formData, isPinned: !!c })}
-          />
-          <Label htmlFor="link-pinned">置顶</Label>
-        </div>
+        {showPinned && (
+          <div className="flex items-center gap-3">
+            <Switch
+              id="link-pinned"
+              checked={formData.isPinned}
+              onCheckedChange={(c) => setFormData({ ...formData, isPinned: c })}
+            />
+            <Label
+              htmlFor="link-pinned"
+              className={cn(
+                "cursor-pointer inline-flex items-center gap-1.5 transition-colors",
+                formData.isPinned ? "text-primary" : "text-muted-foreground"
+              )}
+            >
+              {formData.isPinned ? (
+                <Pin className="h-3.5 w-3.5" />
+              ) : (
+                <PinOff className="h-3.5 w-3.5" />
+              )}
+              {formData.isPinned ? "置顶" : "未置顶"}
+            </Label>
+          </div>
+        )}
       </div>
       <div className="flex justify-end gap-2 pt-2">
         {onCancel && (

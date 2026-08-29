@@ -39,7 +39,7 @@
   --color-danger-muted-foreground: hsl(0 72% 51%);
   --color-border: hsl(240 6% 90%);
   --color-input: hsl(240 6% 90%);
-  --color-ring: hsl(204 90% 56%);
+  --color-ring: hsl(204 65% 62%);
   --radius: 0.5rem;
 }
 
@@ -87,11 +87,13 @@ html.dark {
   /* border / input / ring */
   --color-border: hsl(217 33% 25%);
   --color-input: hsl(217 33% 17%);
-  --color-ring: hsl(217 91% 60%);
+  --color-ring: hsl(217 65% 68%);
 }
 
-* {
-  border-color: var(--color-border);
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 }
 
 body {
@@ -279,25 +281,43 @@ body {
   }
 }
 
-.admin-avatar-ring {
+/* 渐变圆环容器：用 ::before 伪元素 + mask 实现渐变边框环。
+   中心区域完全透明，头像内容不被渐变覆盖（旧实现用多层背景叠加，
+   第一层透明会透出下层 conic/linear 渐变，在头像四角形成遮罩） */
+.admin-avatar-ring,
+.user-avatar-ring {
   position: relative;
+  isolation: isolate;
   display: inline-flex;
   border-radius: 50%;
-  border: 3px solid transparent;
-  background:
-    linear-gradient(transparent, transparent),
-    conic-gradient(from var(--ring-angle), #fff49a, #ffd700, #ff9800, #ffd700, #fff49a);
-  background-origin: border-box;
-  background-clip: padding-box, border-box;
-  box-shadow: 0 0 14px rgba(255, 215, 0, 0.5), 0 0 28px rgba(255, 175, 0, 0.25);
+}
+
+.admin-avatar-ring::before,
+.user-avatar-ring::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: 50%;
+  padding: 2px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* 管理员：金色旋转渐变光环 */
+.admin-avatar-ring::before {
+  background: conic-gradient(from var(--ring-angle), #fff49a, #ffd700, #ff9800, #ffd700, #fff49a);
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.4));
   animation: avatar-ring-spin 3s linear infinite;
 }
 
-.admin-avatar-ring > button,
-.admin-avatar-ring > img,
-.admin-avatar-ring > div,
-.admin-avatar-ring > .avatar-inner {
-  border-radius: 50%;
+/* 普通用户：蓝青静态渐变光环，与管理员金色旋转光环区分 */
+.user-avatar-ring::before {
+  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.3));
 }
 
 @keyframes avatar-badge-pulse {
@@ -331,6 +351,27 @@ body {
   line-height: 1;
   pointer-events: none;
   animation: avatar-badge-pulse 2s ease-in-out infinite;
+}
+
+.user-avatar-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  background: linear-gradient(45deg, #94a3b8, #64748b);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  z-index: 10;
+  box-shadow: 0 0 4px rgba(100, 116, 139, 0.4);
+  line-height: 1;
+  pointer-events: none;
 }
 
 @keyframes float {
@@ -402,3 +443,36 @@ body {
 .dashboard-container .stagger-grid > *:nth-child(2) { animation-delay: 200ms; }
 .dashboard-container .stagger-grid > *:nth-child(3) { animation-delay: 300ms; }
 .dashboard-container .stagger-grid > *:nth-child(4) { animation-delay: 400ms; }
+
+/* Dialog enter / exit animations
+   打开：轻上浮 + 柔和缩放 + 淡入（ease-out 弹感）
+   关闭：轻微下沉 + 缩小 + 淡出 */
+@keyframes dialog-in-kf {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dialog-out-kf {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+
+@utility dialog-in {
+  animation: dialog-in-kf 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@utility dialog-out {
+  animation: dialog-out-kf 0.18s cubic-bezier(0.4, 0, 1, 1) both;
+}

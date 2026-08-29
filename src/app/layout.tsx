@@ -45,10 +45,17 @@ export default function RootLayout({
       <body
         className={`${geist.variable} ${spaceGrotesk.variable} antialiased`}
       >
+        {/* 主题初始化脚本：由服务端渲染进 HTML，在首帧绘制前执行以避免闪烁 */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              '(function(){try{var t=localStorage.getItem("theme")||"system";var d=t==="dark"||(t==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var e=document.documentElement;e.classList.toggle("dark",d);e.style.colorScheme=d?"dark":"light";}catch(e){}})();',
+          }}
+        />
         <Suspense fallback={null}>
           <TopLoader />
         </Suspense>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <ThemeProvider>
           <AuthProvider>
             <ServiceWorkerRegistration />
             <PageLoadComplete>{children}</PageLoadComplete>

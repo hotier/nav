@@ -141,7 +141,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               {session?.user?.image && (
                 <img
-                  src={proxyImageUrl(session.user.image)}
+                  src={proxyImageUrl(session.user.image, 128)}
                   alt=""
                   className="h-10 w-10 rounded-full"
                 />

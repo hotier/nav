@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
-import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home, AlertTriangle, CheckSquare, MoveRight, Folders, X, User } from "lucide-react";
+import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, GlobeOff, Lock, Edit, PencilOff, ChevronDown, Check, Loader2, Home, AlertTriangle, CheckSquare, MoveRight, Folders, X, User, UserRoundPen, Users } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import {
   Empty,
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LinkForm } from "@/components/LinkForm";
+import TruncatedText from "@/components/TruncatedText";
 import {
   TableBody,
   TableCell,
@@ -39,6 +41,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
 import { DynamicIcon } from "@/components/DynamicIcon";
@@ -73,7 +81,7 @@ export default function LinksPage() {
   const { data: catData } = useDataCache({
     configs: [
     {
-      name: "Category:mgmt:v2",
+      name: "Category:mgmt:v3",
       versionTable: "Category",
       fetch: () =>
         fetch("/api/categories?scope=manage&forSelector=true")
@@ -92,7 +100,7 @@ export default function LinksPage() {
     sentinelRef,
     setItems: setData,
   } = useInfiniteScroll<LinkType>({
-    name: "Link",
+    name: "Link:v2",
     versionTable: "Link",
     userId: uid,
     pageSize: 1000,
@@ -102,7 +110,7 @@ export default function LinksPage() {
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
 
-  const categories = (catData["Category:mgmt:v2"] || []) as Category[];
+  const categories = (catData["Category:mgmt:v3"] || []) as Category[];
 
   // 可编辑边界（与服务端 PUT/DELETE /api/links/[id] 权限一致）：
   // - 自己的链接（公开/私有）均可编辑
@@ -115,18 +123,6 @@ export default function LinksPage() {
     },
     [uid, userRole]
   );
-
-  // 从链接中提取去重创建人列表
-  const uniqueCreators = useMemo(() => {
-    const seen = new Map<string, { id: string; name: string }>();
-    links.forEach((link) => {
-      const u = link.user;
-      if (u && !seen.has(u.id)) {
-        seen.set(u.id, { id: u.id, name: u.name || u.username || "未知" });
-      }
-    });
-    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, "zh"));
-  }, [links]);
 
   // 根据最长分类名称 + 标签计算下拉菜单宽度
   // 名称 ~16px/中文字 + 标签 ~40px + icon + gap + check + padding ≈ 120
@@ -168,66 +164,6 @@ export default function LinksPage() {
   const [accessFilter, setAccessFilter] = useState("all");
   const [connectivityFilter, setConnectivityFilter] = useState("all");
   const [creatorFilter, setCreatorFilter] = useState("all");
-
-  // 访问权限下拉菜单
-  const [accessMenuOpen, setAccessMenuOpen] = useState(false);
-  const accessBtnRef = useRef<HTMLButtonElement>(null);
-  const accessMenuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!accessMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (accessMenuRef.current && !accessMenuRef.current.contains(e.target as Node)) {
-        setAccessMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [accessMenuOpen]);
-
-  // 分类筛选下拉菜单
-  const [catMenuOpen, setCatMenuOpen] = useState(false);
-  const catBtnRef = useRef<HTMLButtonElement>(null);
-  const catMenuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!catMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (catMenuRef.current && !catMenuRef.current.contains(e.target as Node)) {
-        setCatMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [catMenuOpen]);
-
-  // 连通性筛选下拉菜单
-  const [connMenuOpen, setConnMenuOpen] = useState(false);
-  const connBtnRef = useRef<HTMLButtonElement>(null);
-  const connMenuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!connMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (connMenuRef.current && !connMenuRef.current.contains(e.target as Node)) {
-        setConnMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [connMenuOpen]);
-
-  // 创建人筛选下拉菜单
-  const [creatorMenuOpen, setCreatorMenuOpen] = useState(false);
-  const creatorBtnRef = useRef<HTMLButtonElement>(null);
-  const creatorMenuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!creatorMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (creatorMenuRef.current && !creatorMenuRef.current.contains(e.target as Node)) {
-        setCreatorMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [creatorMenuOpen]);
 
   // 逐行访问权限下拉
   const [linkAccessId, setLinkAccessId] = useState<string | null>(null);
@@ -302,27 +238,45 @@ export default function LinksPage() {
     }
   };
 
-  const handleToggleAccess = async (linkId: string, currentPrivate: boolean) => {
+  // 隐藏确认框：管理员将他人的公开链接设为隐藏前需二次确认
+  const [hideConfirmLinkId, setHideConfirmLinkId] = useState<string | null>(null);
+
+  // 执行可见性变更：公开/私有（普通用户与属主）；隐藏/解除隐藏（仅管理员对他人的公开链接）
+  // target 支持 { isPrivate?: boolean; isHidden?: boolean }
+  const performSetVisibility = async (linkId: string, target: { isPrivate?: boolean; isHidden?: boolean }) => {
     setLinkAccessId(null);
     const prevLinks = links;
-    const newPrivate = !currentPrivate;
     // 乐观更新
     setData( (prev) =>
-      prev.map((l) => (l as LinkType).id === linkId ? { ...(l as LinkType), isPrivate: newPrivate } : l)
+      prev.map((l) =>
+        (l as LinkType).id === linkId
+          ? {
+              ...(l as LinkType),
+              ...(target.isPrivate !== undefined ? { isPrivate: target.isPrivate } : {}),
+              ...(target.isHidden !== undefined ? { isHidden: target.isHidden } : {}),
+            }
+          : l
+      )
     );
     setLinkUpdating((prev) => ({ ...prev, [linkId]: true }));
     try {
       const res = await fetch(`/api/links/${linkId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isPrivate: newPrivate }),
+        body: JSON.stringify(target),
       });
       if (res.ok) {
         const updated = await res.json();
         setData( (prev) =>
-          prev.map((l) => (l as LinkType).id === linkId ? { ...(l as LinkType), isPrivate: updated.isPrivate } : l)
+          prev.map((l) =>
+            (l as LinkType).id === linkId
+              ? { ...(l as LinkType), isPrivate: updated.isPrivate, isHidden: updated.isHidden }
+              : l
+          )
         );
-        toast.success(updated.isPrivate ? "已设为私有" : "已设为公开");
+        if (updated.isHidden) toast.success("已隐藏");
+        else if (updated.isPrivate) toast.success("已设为私有");
+        else toast.success("已设为公开");
         notifyDataChanged("Link");
       } else {
         setData( () => prevLinks);
@@ -335,6 +289,44 @@ export default function LinksPage() {
     } finally {
       setLinkUpdating((prev) => ({ ...prev, [linkId]: false }));
     }
+  };
+
+  // 可见性操作入口：设置为隐藏时先弹确认框
+  const handleSetVisibility = async (linkId: string, target: { isPrivate?: boolean; isHidden?: boolean }) => {
+    if (target.isHidden) {
+      setHideConfirmLinkId(linkId);
+      return;
+    }
+    await performSetVisibility(linkId, target);
+  };
+
+  // 隐藏确认框目标链接的所有者用户名
+  const hideConfirmLinkUser = hideConfirmLinkId
+    ? links.find((l) => l.id === hideConfirmLinkId)?.user
+    : undefined;
+
+  // 可见性菜单选项（与后端 PUT /api/links/[id] 权限一致）
+  // - 隐藏内容：仅管理员可解除为公开
+  // - 自己的链接：公开/私有自由切换
+  // - 管理员的他人公开链接：公开（当前）/ 隐藏
+  const linkVisibilityOptions = (link: LinkType) => {
+    if (link.isHidden) {
+      if (userRole !== "admin") return [];
+      return [{ label: "公开", Icon: Globe, color: "text-success", active: false, payload: { isPrivate: false, isHidden: false } as const }];
+    }
+    if (link.userId === uid) {
+      return [
+        { label: "公开", Icon: Globe, color: "text-success", active: !link.isPrivate, payload: { isPrivate: false } as const },
+        { label: "私有", Icon: Lock, color: "text-warning", active: link.isPrivate, payload: { isPrivate: true } as const },
+      ];
+    }
+    if (userRole === "admin" && !link.isPrivate) {
+      return [
+        { label: "公开", Icon: Globe, color: "text-success", active: true, payload: { isPrivate: false } as const },
+        { label: "隐藏", Icon: GlobeOff, color: "text-warning", active: false, payload: { isHidden: true } as const },
+      ];
+    }
+    return [];
   };
 
   // 从缓存恢复连通性检测结果
@@ -651,19 +643,23 @@ export default function LinksPage() {
     setIsDialogOpen(true);
   };
 
-  const handleCheckLinks = async () => {
-    setIsChecking(true);
-    toast.success(`开始检测 ${links.length} 个链接...`);
+  const handleCheckLinks = async (ids?: string[]) => {
+    const targets = ids
+      ? links.filter((l) => ids.includes(l.id))
+      : links;
+    if (targets.length === 0) return;
 
-    const resultsMap: Record<string, string> = {};
+    setIsChecking(true);
+    toast.success(`开始检测 ${targets.length} 个链接...`);
+
     let activeCount = 0;
     let timeoutCount = 0;
     let deadCount = 0;
 
     // 浏览器直连检测，并发 8 个
     const chunks = [];
-    for (let i = 0; i < links.length; i += 8) {
-      chunks.push(links.slice(i, i + 8));
+    for (let i = 0; i < targets.length; i += 8) {
+      chunks.push(targets.slice(i, i + 8));
     }
 
     for (const chunk of chunks) {
@@ -680,14 +676,14 @@ export default function LinksPage() {
             });
 
             clearTimeout(timer);
-            resultsMap[link.id] = "active";
+            setCheckResults((prev) => ({ ...prev, [link.id]: "active" }));
             activeCount++;
           } catch (err: unknown) {
             if (err instanceof DOMException && err.name === "AbortError") {
-              resultsMap[link.id] = "timeout";
+              setCheckResults((prev) => ({ ...prev, [link.id]: "timeout" }));
               timeoutCount++;
             } else {
-              resultsMap[link.id] = "dead";
+              setCheckResults((prev) => ({ ...prev, [link.id]: "dead" }));
               deadCount++;
             }
           }
@@ -695,7 +691,6 @@ export default function LinksPage() {
       );
     }
 
-    setCheckResults(resultsMap);
     toast.success(`检测完成：${activeCount} 个有效，${timeoutCount} 个超时，${deadCount} 个不可达`);
     setIsChecking(false);
   };
@@ -797,9 +792,11 @@ export default function LinksPage() {
         connectivityFilter === "all" ||
         checkResults[link.id] === connectivityFilter;
 
-      // 创建人筛选
+      // 创建人筛选：全部 / 归我所有 / 与我共享
       const matchesCreator =
-        creatorFilter === "all" || link.user?.id === creatorFilter;
+        creatorFilter === "all" ||
+        (creatorFilter === "mine" && link.userId === uid) ||
+        (creatorFilter === "shared" && link.userId !== uid);
 
       return matchesSearch && matchesCategory && matchesAccess && matchesConnectivity && matchesCreator;
     })
@@ -851,12 +848,12 @@ export default function LinksPage() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={handleCheckLinks}
+              onClick={() => handleCheckLinks()}
               disabled={isChecking || links.length === 0}
             >
               {isChecking ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2" />
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                   检测中...
                 </>
               ) : (
@@ -873,7 +870,7 @@ export default function LinksPage() {
                   添加链接
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
                 <DialogHeader>
                   <DialogTitle>{editingLinkId ? "编辑链接" : "添加新链接"}</DialogTitle>
                 </DialogHeader>
@@ -882,6 +879,7 @@ export default function LinksPage() {
                   initialData={newLink}
                   categories={categories}
                   onSubmit={handleCreateLink}
+                  showPinned={false}
                   onCancel={() => {
                     setIsDialogOpen(false);
                     setEditingLinkId(null);
@@ -898,6 +896,7 @@ export default function LinksPage() {
                   }}
                   isSubmitting={isSubmitting}
                   submitLabel={editingLinkId ? "更新" : "添加"}
+                  isEdit={!!editingLinkId}
                 />
               </DialogContent>
             </Dialog>
@@ -915,239 +914,219 @@ export default function LinksPage() {
               className="pl-10"
             />
           </div>
-          {/* Category Filter — 同款自定义下拉 */}
-          <div className="relative">
-            <button
-              ref={catBtnRef}
-              onClick={() => setCatMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
-            >
-              {categoryFilter === "all" ? (
-                <Home className="h-3.5 w-3.5 text-muted-foreground" />
-              ) : (
-                <DynamicIcon name={categories.find((c) => c.id === categoryFilter)?.icon || "Folder"} className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-              {categoryFilter === "all" ? "全部分类" : (categories.find((c) => c.id === categoryFilter)?.name || "分类")}
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            </button>
-            {catMenuOpen && createPortal(
-              <div
-                ref={catMenuRef}
-                style={{
-                  position: "fixed",
-                  top: (catBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
-                  left: (catBtnRef.current?.getBoundingClientRect().left ?? 0) + (catBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
-                  transform: "translateX(-50%)",
-                  minWidth: `${categoryDropdownMinW}px`,
-                }}
-                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
+          {/* Category Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
               >
-                <button
-                  onClick={() => { setCategoryFilter("all"); setCatMenuOpen(false); }}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
-                    categoryFilter === "all" ? "text-foreground font-medium" : "text-muted-foreground"
-                  )}
-                >
+                {categoryFilter === "all" ? (
                   <Home className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="flex-1 text-left">全部分类</span>
-                  {categoryFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
-                </button>
-                {categories.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => { setCategoryFilter(c.id); setCatMenuOpen(false); }}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
-                      categoryFilter === c.id ? "text-foreground font-medium" : "text-muted-foreground"
-                    )}
-                  >
-                    <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="flex-1 text-left truncate">{c.name}</span>
-                    {c.isPublic ? (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-success-muted text-success-muted-foreground flex-shrink-0">
-                        <Globe className="h-2.5 w-2.5" />
-                        公开
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-warning-muted text-warning-muted-foreground flex-shrink-0">
-                        <Lock className="h-2.5 w-2.5" />
-                        私有
-                      </span>
-                    )}
-                    <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center">
-                      {categoryFilter === c.id && <Check className="h-3.5 w-3.5 text-violet-500" />}
-                    </span>
-                  </button>
-                ))}
-              </div>,
-              document.body
-            )}
-          </div>
-          {/* Access Filter — 同款自定义下拉 */}
-          <div className="relative">
-            <button
-              ref={accessBtnRef}
-              onClick={() => setAccessMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
+                ) : (
+                  <DynamicIcon name={categories.find((c) => c.id === categoryFilter)?.icon || "Folder"} className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+                {categoryFilter === "all" ? "全部分类" : (categories.find((c) => c.id === categoryFilter)?.name || "分类")}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="center"
+              sideOffset={4}
+              style={{ minWidth: `${categoryDropdownMinW}px` }}
+              className="max-h-[240px] overflow-y-auto rounded-lg bg-card p-0 py-1 border-border"
             >
-              {accessFilter === "all" ? (
-                <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-              ) : accessFilter === "public" ? (
-                <Globe className="h-3.5 w-3.5 text-success" />
-              ) : (
-                <Lock className="h-3.5 w-3.5 text-warning" />
-              )}
-              {accessFilter === "all" ? "访问权限" : accessFilter === "public" ? "公开" : "私有"}
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            </button>
-            {accessMenuOpen && createPortal(
-              <div
-                ref={accessMenuRef}
-                style={{
-                  position: "fixed",
-                  top: (accessBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
-                  left: (accessBtnRef.current?.getBoundingClientRect().left ?? 0) + (accessBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
-                  transform: "translateX(-50%)",
-                }}
-                className="z-[9999] min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
+              <DropdownMenuItem
+                onClick={() => setCategoryFilter("all")}
+                className={cn(
+                  "px-3 py-2 text-xs cursor-pointer rounded-none",
+                  categoryFilter === "all" ? "text-foreground font-medium" : "text-muted-foreground"
+                )}
               >
-                {([
-                  { value: "all", label: "全部", Icon: Globe, color: "text-muted-foreground" },
-                  { value: "public", label: "公开", Icon: Globe, color: "text-success" },
-                  { value: "private", label: "私有", Icon: Lock, color: "text-warning" },
-                ] as const).map(({ value, label, Icon, color }) => (
-                  <button
-                    key={value}
-                    onClick={() => {
-                      setAccessFilter(value);
-                      setAccessMenuOpen(false);
-                    }}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
-                      accessFilter === value
-                        ? "text-foreground font-medium"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    <Icon className={cn("h-3.5 w-3.5", color)} />
-                    <span className="flex-1 text-left">{label}</span>
-                    {accessFilter === value && (
-                      <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
-                    )}
-                  </button>
-                ))}
-              </div>,
-              document.body
-            )}
-          </div>
-          {/* Connectivity Filter — 同款自定义下拉 */}
-          <div className="relative">
-            <button
-              ref={connBtnRef}
-              onClick={() => setConnMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
-            >
-              {connectivityFilter === "active" ? (
-                <CheckCircle className="h-3.5 w-3.5 text-success" />
-              ) : connectivityFilter === "timeout" ? (
-                <XCircle className="h-3.5 w-3.5 text-warning" />
-              ) : connectivityFilter === "dead" ? (
-                <XCircle className="h-3.5 w-3.5 text-danger" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-              {connectivityFilter === "active" ? "有效" : connectivityFilter === "timeout" ? "超时" : connectivityFilter === "dead" ? "不可达" : "连通性"}
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            </button>
-            {connMenuOpen && createPortal(
-              <div
-                ref={connMenuRef}
-                style={{
-                  position: "fixed",
-                  top: (connBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
-                  left: (connBtnRef.current?.getBoundingClientRect().left ?? 0) + (connBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
-                  transform: "translateX(-50%)",
-                }}
-                className="z-[9999] min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
-              >
-                {([
-                  { value: "all", label: "全部", Icon: RefreshCw, color: "text-muted-foreground" },
-                  { value: "active", label: "有效", Icon: CheckCircle, color: "text-success" },
-                  { value: "timeout", label: "超时", Icon: XCircle, color: "text-warning" },
-                  { value: "dead", label: "不可达", Icon: XCircle, color: "text-danger" },
-                ] as const).map(({ value, label, Icon, color }) => (
-                  <button
-                    key={value}
-                    onClick={() => { setConnectivityFilter(value); setConnMenuOpen(false); }}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
-                      connectivityFilter === value ? "text-foreground font-medium" : "text-muted-foreground"
-                    )}
-                  >
-                    <Icon className={cn("h-3.5 w-3.5", color)} />
-                    <span className="flex-1 text-left">{label}</span>
-                    {connectivityFilter === value && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
-                  </button>
-                ))}
-              </div>,
-              document.body
-            )}
-          </div>
-          {/* Creator Filter — 创建人筛选 */}
-          <div className="relative">
-            <button
-              ref={creatorBtnRef}
-              onClick={() => setCreatorMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
-            >
-              <User className="h-3.5 w-3.5 text-muted-foreground" />
-              {creatorFilter === "all"
-                ? "创建人"
-                : uniqueCreators.find((c) => c.id === creatorFilter)?.name || "创建人"}
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            </button>
-            {creatorMenuOpen && createPortal(
-              <div
-                ref={creatorMenuRef}
-                style={{
-                  position: "fixed",
-                  top: (creatorBtnRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
-                  left: (creatorBtnRef.current?.getBoundingClientRect().left ?? 0) + (creatorBtnRef.current?.getBoundingClientRect().width ?? 0) / 2,
-                  transform: "translateX(-50%)",
-                  minWidth: "140px",
-                }}
-                className="z-[9999] max-h-[240px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
-              >
-                <button
-                  onClick={() => { setCreatorFilter("all"); setCreatorMenuOpen(false); }}
+                <Home className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="flex-1 text-left">全部分类</span>
+                {categoryFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+              </DropdownMenuItem>
+              {categories.map((c) => (
+                <DropdownMenuItem
+                  key={c.id}
+                  onClick={() => setCategoryFilter(c.id)}
                   className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
-                    creatorFilter === "all" ? "text-foreground font-medium" : "text-muted-foreground"
+                    "px-3 py-2 text-xs cursor-pointer rounded-none",
+                    categoryFilter === c.id ? "text-foreground font-medium" : "text-muted-foreground"
                   )}
                 >
+                  <DynamicIcon name={c.icon || "Folder"} className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="flex-1 text-left truncate">{c.name}</span>
+                  {c.isPublic ? (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-success-muted text-success-muted-foreground flex-shrink-0">
+                      <Globe className="h-2.5 w-2.5" />
+                      公开
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-px rounded-full bg-warning-muted text-warning-muted-foreground flex-shrink-0">
+                      <Lock className="h-2.5 w-2.5" />
+                      私有
+                    </span>
+                  )}
+                  <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center">
+                    {categoryFilter === c.id && <Check className="h-3.5 w-3.5 text-violet-500" />}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Access Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
+              >
+                {accessFilter === "all" ? (
+                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : accessFilter === "public" ? (
+                  <Globe className="h-3.5 w-3.5 text-success" />
+                ) : (
+                  <Lock className="h-3.5 w-3.5 text-warning" />
+                )}
+                {accessFilter === "all" ? "访问权限" : accessFilter === "public" ? "公开" : "私有"}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="center"
+              sideOffset={4}
+              className="min-w-[120px] rounded-lg bg-card p-0 py-1 border-border"
+            >
+              {([
+                { value: "all", label: "全部", Icon: Globe, color: "text-muted-foreground" },
+                { value: "public", label: "公开", Icon: Globe, color: "text-success" },
+                { value: "private", label: "私有", Icon: Lock, color: "text-warning" },
+              ] as const).map(({ value, label, Icon, color }) => (
+                <DropdownMenuItem
+                  key={value}
+                  onClick={() => setAccessFilter(value)}
+                  className={cn(
+                    "px-3 py-2 text-xs cursor-pointer rounded-none",
+                    accessFilter === value
+                      ? "text-foreground font-medium"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  <Icon className={cn("h-3.5 w-3.5", color)} />
+                  <span className="flex-1 text-left">{label}</span>
+                  {accessFilter === value && (
+                    <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Connectivity Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
+              >
+                {connectivityFilter === "active" ? (
+                  <CheckCircle className="h-3.5 w-3.5 text-success" />
+                ) : connectivityFilter === "timeout" ? (
+                  <XCircle className="h-3.5 w-3.5 text-warning" />
+                ) : connectivityFilter === "dead" ? (
+                  <XCircle className="h-3.5 w-3.5 text-danger" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+                {connectivityFilter === "active" ? "有效" : connectivityFilter === "timeout" ? "超时" : connectivityFilter === "dead" ? "不可达" : "连通性"}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="center"
+              sideOffset={4}
+              className="min-w-[120px] rounded-lg bg-card p-0 py-1 border-border"
+            >
+              {([
+                { value: "all", label: "全部", Icon: RefreshCw, color: "text-muted-foreground" },
+                { value: "active", label: "有效", Icon: CheckCircle, color: "text-success" },
+                { value: "timeout", label: "超时", Icon: XCircle, color: "text-warning" },
+                { value: "dead", label: "不可达", Icon: XCircle, color: "text-danger" },
+              ] as const).map(({ value, label, Icon, color }) => (
+                <DropdownMenuItem
+                  key={value}
+                  onClick={() => setConnectivityFilter(value)}
+                  className={cn(
+                    "px-3 py-2 text-xs cursor-pointer rounded-none",
+                    connectivityFilter === value ? "text-foreground font-medium" : "text-muted-foreground"
+                  )}
+                >
+                  <Icon className={cn("h-3.5 w-3.5", color)} />
+                  <span className="flex-1 text-left">{label}</span>
+                  {connectivityFilter === value && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* Creator Filter */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground ring-1 ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent transition-all cursor-pointer h-9"
+              >
+                {creatorFilter === "mine" ? (
+                  <UserRoundPen className="h-3.5 w-3.5 text-success" />
+                ) : creatorFilter === "shared" ? (
+                  <Users className="h-3.5 w-3.5 text-warning" />
+                ) : (
                   <User className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="flex-1 text-left">全部</span>
-                  {creatorFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
-                </button>
-                {uniqueCreators.map((creator) => (
-                  <button
-                    key={creator.id}
-                    onClick={() => { setCreatorFilter(creator.id); setCreatorMenuOpen(false); }}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
-                      creatorFilter === creator.id ? "text-foreground font-medium" : "text-muted-foreground"
-                    )}
-                  >
-                    <User className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="flex-1 text-left truncate">{creator.name}</span>
-                    {creatorFilter === creator.id && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
-                  </button>
-                ))}
-              </div>,
-              document.body
-            )}
-          </div>
+                )}
+                {creatorFilter === "mine"
+                  ? "归我所有"
+                  : creatorFilter === "shared"
+                    ? "与我共享"
+                    : "创建人"}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="center"
+              sideOffset={4}
+              className="min-w-[140px] rounded-lg bg-card p-0 py-1 border-border"
+            >
+              <DropdownMenuItem
+                onClick={() => setCreatorFilter("all")}
+                className={cn(
+                  "px-3 py-2 text-xs cursor-pointer rounded-none",
+                  creatorFilter === "all" ? "text-foreground font-medium" : "text-muted-foreground"
+                )}
+              >
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="flex-1 text-left">全部</span>
+                {creatorFilter === "all" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCreatorFilter("mine")}
+                className={cn(
+                  "px-3 py-2 text-xs cursor-pointer rounded-none",
+                  creatorFilter === "mine" ? "text-foreground font-medium" : "text-muted-foreground"
+                )}
+              >
+                <UserRoundPen className="h-3.5 w-3.5 text-success" />
+                <span className="flex-1 text-left">归我所有</span>
+                {creatorFilter === "mine" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setCreatorFilter("shared")}
+                className={cn(
+                  "px-3 py-2 text-xs cursor-pointer rounded-none",
+                  creatorFilter === "shared" ? "text-foreground font-medium" : "text-muted-foreground"
+                )}
+              >
+                <Users className="h-3.5 w-3.5 text-warning" />
+                <span className="flex-1 text-left">与我共享</span>
+                {creatorFilter === "shared" && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Links Table */}
@@ -1198,6 +1177,16 @@ export default function LinksPage() {
                 已选 <strong>{selectedIds.size}</strong> 个链接
               </span>
               <div className="flex-1" />
+              <Button
+                size="sm"
+                variant="default"
+                className="h-8 text-xs bg-success text-success-foreground hover:bg-success/90"
+                onClick={() => handleCheckLinks(Array.from(selectedIds))}
+                disabled={isChecking}
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                检测选中
+              </Button>
               <Button
                 size="sm"
                 variant="default"
@@ -1253,7 +1242,38 @@ export default function LinksPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLinks.length === 0 ? (
+                {linksLoading && filteredLinks.length === 0 ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <TableRow key={i} className="hover:bg-transparent">
+                      {isSelectMode && (
+                        <TableCell className="w-10">
+                          <Skeleton className="h-4 w-4" />
+                        </TableCell>
+                      )}
+                      <TableCell>
+                        <Skeleton className="h-4 w-40" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-56" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-20" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-14" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-14" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-16" />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Skeleton className="h-7 w-7 ml-auto" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredLinks.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={isSelectMode ? 8 : 7} className="py-8">
                       <Empty>
@@ -1279,31 +1299,31 @@ export default function LinksPage() {
                           />
                         </TableCell>
                       )}
-                      <TableCell className="font-medium">
-                        {link.isPinned && (
-                          <span className="text-primary mr-1" title="已置顶">
-                            📌
-                          </span>
-                        )}
-                        {highlightText(link.title, searchQuery)}
+                      <TableCell className="max-w-[250px] font-medium">
+                        <TruncatedText text={link.title} className="w-full cursor-default" alignOffset={-16}>
+                          {highlightText(link.title, searchQuery)}
+                        </TruncatedText>
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate">
-                        <a
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-muted-foreground hover:text-primary"
-                        >
-                          {highlightText(link.url, searchQuery)}
-                        </a>
+                      <TableCell className="max-w-[200px]">
+                        <TruncatedText text={link.url} className="w-full" alignOffset={-16}>
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block w-full truncate text-muted-foreground hover:text-primary"
+                          >
+                            {highlightText(link.url, searchQuery)}
+                          </a>
+                        </TruncatedText>
                       </TableCell>
                       <TableCell>
                         <div className="relative inline-block">
+                          {canEditLink(link) ? (
                           <button
                             onClick={() => {
                               setLinkCategoryId(linkCategoryId === link.id ? null : link.id);
                             }}
-                            disabled={!canEditLink(link) || categoryUpdating[link.id]}
+                            disabled={categoryUpdating[link.id]}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1 bg-muted text-muted-foreground ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent"
                           >
                             {categoryUpdating[link.id] ? (
@@ -1314,6 +1334,12 @@ export default function LinksPage() {
                             {link.category?.name || "未分类"}
                             <ChevronDown className="h-3 w-3 opacity-50" />
                           </button>
+                          ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ring-1 bg-muted text-muted-foreground ring-border dark:bg-muted dark:text-muted-foreground dark:ring-border">
+                            <DynamicIcon name={link.category?.icon || "Folder"} className="h-3 w-3 text-muted-foreground" />
+                            {link.category?.name || "未分类"}
+                          </span>
+                          )}
                           {linkCategoryId === link.id && canEditLink(link) && (
                             <div
                               ref={linkCategoryMenuRef}
@@ -1356,49 +1382,70 @@ export default function LinksPage() {
                       </TableCell>
                       <TableCell>
                         <div className="relative inline-block">
+                          {canEditLink(link) ? (
                           <button
                             onClick={() => {
                               setLinkAccessId(linkAccessId === link.id ? null : link.id);
                             }}
                             disabled={linkUpdating[link.id]}
                             className={cn(
-                              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1",
-                              link.isPrivate
-                                ? "bg-warning-muted text-warning-muted-foreground ring-warning/20 hover:bg-warning-muted/60"
-                                : "bg-success-muted text-success-muted-foreground ring-success/20 hover:bg-success-muted/60"
+                              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1 outline-none focus-visible:outline-none focus-visible:ring-0",
+                              link.isHidden
+                                ? "bg-muted text-muted-foreground ring-border hover:bg-muted/60"
+                                : link.isPrivate
+                                  ? "bg-warning-muted text-warning-muted-foreground ring-warning/20 hover:bg-warning-muted/60"
+                                  : "bg-success-muted text-success-muted-foreground ring-success/20 hover:bg-success-muted/60"
                             )}
                           >
                             {linkUpdating[link.id] ? (
                               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                            ) : link.isHidden ? (
+                              <GlobeOff className="h-3 w-3 text-warning" />
                             ) : link.isPrivate ? (
                               <Lock className="h-3 w-3 text-warning" />
                             ) : (
                               <Globe className="h-3 w-3 text-success" />
                             )}
-                            {link.isPrivate ? "私有" : "公开"}
+                            {link.isHidden ? "隐藏" : link.isPrivate ? "私有" : "公开"}
                             <ChevronDown className="h-3 w-3 opacity-50" />
                           </button>
+                          ) : (
+                          <span className={cn(
+                            "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ring-1",
+                            link.isHidden
+                              ? "bg-muted text-muted-foreground ring-border"
+                              : link.isPrivate
+                                ? "bg-warning-muted text-warning-muted-foreground ring-warning/20"
+                                : "bg-success-muted text-success-muted-foreground ring-success/20"
+                          )}>
+                            {link.isHidden ? (
+                              <GlobeOff className="h-3 w-3 text-warning" />
+                            ) : link.isPrivate ? (
+                              <Lock className="h-3 w-3 text-warning" />
+                            ) : (
+                              <Globe className="h-3 w-3 text-success" />
+                            )}
+                            {link.isHidden ? "隐藏" : link.isPrivate ? "私有" : "公开"}
+                          </span>
+                          )}
                           {linkAccessId === link.id && canEditLink(link) && (
                             <div
                               ref={linkAccessMenuRef}
                               className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
                             >
-                              {([
-                                { value: false, label: "公开", Icon: Globe, color: "text-success" },
-                                { value: true, label: "私有", Icon: Lock, color: "text-warning" },
-                              ] as const).map(({ value, label, Icon, color }) => (
+                              {linkVisibilityOptions(link).map(({ label, Icon, color, active, payload }) => (
                                 <button
-                                  key={String(value)}
-                                  onClick={() => handleToggleAccess(link.id, link.isPrivate)}
+                                  key={label}
+                                  onClick={() => handleSetVisibility(link.id, payload)}
                                   disabled={linkUpdating[link.id]}
                                   className={cn(
                                     "w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-muted",
-                                    link.isPrivate === value ? "text-foreground font-medium" : "text-muted-foreground"
+                                    active ? "text-foreground font-medium" : "text-muted-foreground"
                                   )}
                                 >
                                   <Icon className={cn("h-3.5 w-3.5", color)} />
                                   <span className="flex-1 text-left">{label}</span>
-                                  {link.isPrivate === value && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
+                                  {active && <Check className="h-3.5 w-3.5 text-violet-500 flex-shrink-0" />}
                                 </button>
                               ))}
                             </div>
@@ -1413,7 +1460,7 @@ export default function LinksPage() {
                           if (checking) {
                             return (
                               <span className="text-xs font-medium px-2 py-0.5 rounded inline-flex items-center gap-1 bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground">
-                                <RefreshCw className="h-3 w-3" /> 检测中
+                                <RefreshCw className="h-3 w-3 animate-spin" /> 检测中
                               </span>
                             );
                           }
@@ -1482,7 +1529,16 @@ export default function LinksPage() {
                               <Edit className="h-4 w-4" />
                             </Button>
                           ) : (
-                            <span className="text-xs text-muted-foreground italic">只读</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled
+                              title="只读"
+                              aria-label="只读"
+                            >
+                              <PencilOff className="h-4 w-4" />
+                            </Button>
                           )}
                         </div>
                       </TableCell>
@@ -1605,6 +1661,28 @@ export default function LinksPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 隐藏确认框：转为隐藏后普通用户不可再修改可见性 */}
+      <ConfirmDialog
+        open={!!hideConfirmLinkId}
+        onOpenChange={(open) => {
+          if (!open) setHideConfirmLinkId(null);
+        }}
+        title="确认隐藏该链接？"
+        description={
+          <p>
+            转为隐藏后，用户「{hideConfirmLinkUser?.name || hideConfirmLinkUser?.username || "未知"}」将
+            <strong className="text-danger">无法修改</strong>
+            该链接的可见性。
+          </p>
+        }
+        confirmText="确认隐藏"
+        onConfirm={() => {
+          const id = hideConfirmLinkId;
+          setHideConfirmLinkId(null);
+          if (id) performSetVisibility(id, { isHidden: true });
+        }}
+      />
     </AdminLayout>
   );
 }

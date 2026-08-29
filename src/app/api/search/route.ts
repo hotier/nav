@@ -63,15 +63,16 @@ export async function POST(request: Request) {
     }
 
     const { query } = result.data;
+    const userRole = (session.user as { role?: string }).role;
 
-    // 链接搜索统一走 lib/search.ts（含当前用户可见性）
-    const links = await searchLinksFromModule(query, session.user.id);
+    // 链接搜索统一走 lib/search.ts（含当前用户可见性，管理员含被隐藏内容）
+    const links = await searchLinksFromModule(query, session.user.id, userRole);
 
     // 分类搜索：复用分类权限真源（未登录/普通用户搜不到他人私有分类名），并只返回安全字段
     const categories = await prisma.category.findMany({
       where: {
         AND: [
-          buildCategoryWhere(session.user.id) as Record<string, unknown>,
+          buildCategoryWhere(session.user.id, "home", userRole) as Record<string, unknown>,
           { name: { contains: query } },
         ],
       },

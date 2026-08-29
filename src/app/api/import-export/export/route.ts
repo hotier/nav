@@ -20,9 +20,16 @@ export async function GET(request: Request) {
 
     // 分类按权限过滤：管理员看全部，普通用户看公开 + 自己的
     const userRole = (session.user as { role?: string }).role;
-    const catWhere: Record<string, unknown> = {};
+    // 普通用户导出时排除被管理员隐藏的内容；管理员导出全部（含隐藏）
     if (userRole !== "admin") {
-      catWhere.OR = [{ isPublic: true }, { userId: session.user.id }];
+      where.isHidden = false;
+    }
+    // 分类导出口径与可见性一致：公开（含隐藏）+ 自己的私有；普通用户再排除被隐藏的
+    const catWhere: Record<string, unknown> = {
+      OR: [{ isPublic: true }, { userId: session.user.id }],
+    };
+    if (userRole !== "admin") {
+      catWhere.isHidden = false;
     }
 
     const [categories, links] = await Promise.all([

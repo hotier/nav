@@ -164,16 +164,24 @@ export async function POST(request: Request) {
     let targetCategoryId = categoryId;
 
     if (!targetCategoryId) {
+      // 只查找当前用户自己的分类，避免把链接导入到他人分类
       const defaultCategory = await prisma.category.findFirst({
+        where: { userId: session.user.id },
         orderBy: { sortOrder: "asc" },
       });
 
       if (!defaultCategory) {
+        // 兜底创建的默认分类为公开（普通用户有权创建公开分类）。
+        // 若已有同名公开分类（公开名全局唯一），降级为私有创建，避免撞名
+        const dup = await prisma.category.findFirst({
+          where: { isPublic: true, name: "默认分类" },
+          select: { id: true },
+        });
         const newCategory = await prisma.category.create({
           data: {
             name: "默认分类",
             sortOrder: 0,
-            isPublic: true,
+            isPublic: !dup,
             userId: session.user.id,
           },
         });

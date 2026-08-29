@@ -34,7 +34,7 @@ export default function ImportExportPage() {
 
   // 初始化：从缓存预加载分类列表
   useEffect(() => {
-    const cached = readPageCache<Category>("Category", 1);
+    const cached = readPageCache<Category>("Category:v4", 1);
     if (cached && cached.data.length > 0) setCategories(cached.data);
   }, []);
 
@@ -48,7 +48,7 @@ export default function ImportExportPage() {
       if (res.ok) {
         const data: Category[] = await res.json();
         setCategories(data);
-        writePageCache("Category", 1, data, data.length, serverVersion || 1);
+        writePageCache("Category:v4", 1, data, data.length, serverVersion || 1);
       }
     } catch (err) {
       console.error(err);

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/empty";
 import { useEffect, useState } from "react";
 import type { Link as LinkType, Category } from "@/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, FolderX, Inbox } from "lucide-react";
 
 /** 从分类树（含 children 嵌套）中按 slug 查找分类 */
 function findCategoryBySlug(slug: string, categories: Category[]): Category | undefined {
@@ -45,7 +45,8 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
 
   const { data: catData, loading: catLoading } = useDataCache({ configs: [
     {
-      name: "Category",
+      name: "Category:v4",
+      versionTable: "Category",
       fetch: () =>
         fetch("/api/categories")
           .then((r) => r.json())
@@ -57,7 +58,7 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
     },
   ], userId });
 
-  const categories = Array.isArray(catData["Category"]) ? (catData["Category"] as Category[]) : [];
+  const categories = Array.isArray(catData["Category:v4"]) ? (catData["Category:v4"] as Category[]) : [];
 
   const category = findCategoryBySlug(slug, categories);
   const categoryId = category?.id;
@@ -68,7 +69,8 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
   // enabled 门控：categoryId 未定位（分类树未加载完成）前禁止初始化/拉取/写缓存——
   // 否则会以错误参数拉取并污染缓存，参数就绪后旧数据还会泄漏到渲染（历史 bug）。
   const { items: allLinks, loading: linksLoading, isLoadingMore, sentinelRef } = useInfiniteScroll<LinkType>({
-    name: "Link",
+    name: "Link:v2",
+    versionTable: "Link",
     enabled: !!categoryId,
     userId,
     pageSize: 1000,
@@ -92,7 +94,9 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
     return (
       <Empty>
         <EmptyHeader>
-          <EmptyMedia variant="default" className="text-5xl">🔍</EmptyMedia>
+          <EmptyMedia variant="default">
+            <FolderX className="size-12 text-muted-foreground/50" />
+          </EmptyMedia>
           <EmptyTitle>分类不存在</EmptyTitle>
         </EmptyHeader>
       </Empty>
@@ -136,7 +140,9 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
         ) : (
           <Empty>
             <EmptyHeader>
-              <EmptyMedia variant="default" className="text-5xl">📭</EmptyMedia>
+              <EmptyMedia variant="default">
+                <Inbox className="size-12 text-muted-foreground/50" />
+              </EmptyMedia>
               <EmptyTitle>该分类下没有链接</EmptyTitle>
             </EmptyHeader>
           </Empty>

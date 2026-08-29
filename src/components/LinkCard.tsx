@@ -11,6 +11,7 @@ import {
   QrCode,
   Pin,
   Link2,
+  Lock,
   GripVertical,
 } from "lucide-react";
 import {
@@ -146,14 +147,9 @@ export function LinkCard({
 
   const handleEditSubmit = async (data: any) => {
     if (!onUpdate) return;
-    try {
-      // 传 silent=true：避免 LinksGrid.handleUpdate 再弹一次 toast（重复提示）
-      await onUpdate(link.id, data, true);
-      setIsEditing(false);
-      toast.success("链接已更新");
-    } catch {
-      toast.error("更新失败");
-    }
+    // 乐观更新：立即关闭弹窗，请求在后台完成；成功/失败提示由 LinksGrid.handleUpdate 统一处理
+    setIsEditing(false);
+    onUpdate(link.id, data, false).catch(() => {});
   };
 
   // ✅ 修复：延迟打开弹窗，避免 shadcn 冲突
@@ -207,13 +203,19 @@ export function LinkCard({
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  {link.isPinned && <span className="text-warning">📌</span>}
                   <span
                     className="font-semibold text-foreground truncate select-text cursor-text"
                     title={link.title}
                   >{highlightText(link.title, searchQuery)}</span>
+                  {link.isPinned && (
+                    <span className="inline-flex items-center gap-0.5 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0">
+                      <Pin className="h-3 w-3" />
+                      置顶
+                    </span>
+                  )}
                   {link.isPrivate && (
-                    <span className="text-xs bg-warning-muted text-warning-muted-foreground px-1.5 py-0.5 rounded flex-shrink-0">
+                    <span className="inline-flex items-center gap-0.5 text-xs bg-warning-muted text-warning-muted-foreground px-1.5 py-0.5 rounded flex-shrink-0">
+                      <Lock className="h-3 w-3" />
                       私有
                     </span>
                   )}
@@ -308,7 +310,7 @@ export function LinkCard({
       </Dialog>
 
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent>
+        <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>编辑链接</DialogTitle>
           </DialogHeader>
@@ -327,6 +329,7 @@ export function LinkCard({
             onSubmit={handleEditSubmit}
             onCancel={() => setIsEditing(false)}
             submitLabel="保存"
+            isEdit
           />
         </DialogContent>
       </Dialog>

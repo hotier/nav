@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { RECOG_CACHE_PREFIX, getRedis } from "@/lib/redis";
 
 interface RecognizedMeta {
   title: string;
@@ -68,6 +69,19 @@ export async function recognizeUrl(url: string): Promise<RecognizedMeta> {
     return { title: "" };
   }
 
+  // 按域名缓存识别结果（跨用户共享，同一站点的标题/描述/图标基本不变）。
+  // 仅 Redis 模式生效；缓存错误一律吞掉，回退到真实抓取。
+  const client = getRedis();
+  const cacheKey = RECOG_CACHE_PREFIX + parsedUrl.origin;
+  if (client) {
+    try {
+      const cached = await client.get<RecognizedMeta>(cacheKey);
+      if (cached && (cached.title || cached.favicon)) return cached;
+    } catch {
+      // 忽略缓存异常，走真实抓取
+    }
+  }
+
   // HTML 抓取与 faviconsnap 并行执行，避免串行导致识别超时。
   // favicon 以 faviconsnap 引擎为首要方式；HTML 提取作为降级。
   const htmlPromise = (async () => {
@@ -134,9 +148,20 @@ export async function recognizeUrl(url: string): Promise<RecognizedMeta> {
   // 仅 HTML 抓取不到时降级用 faviconsnap 中转（faviconsnap 对绝大多数站点都有兜底）
   const favicon = buildFaviconProxyUrl(cleanedUrl);
 
-  return {
+  const result: RecognizedMeta = {
     title: htmlResult.title || "",
     description: htmlResult.description || undefined,
     favicon: favicon || undefined,
   };
+
+  // 识别成功（有标题或图标）才写缓存；失败不缓存，下次仍可重试
+  if (client && (result.title || result.favicon)) {
+    try {
+      await client.set(cacheKey, JSON.stringify(result), { ex: 7 * 86400 });
+    } catch {
+      // 写缓存失败不影响本次响应
+    }
+  }
+
+  return result;
 }

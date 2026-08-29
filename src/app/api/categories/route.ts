@@ -19,8 +19,8 @@ export async function GET(request: Request) {
     // forSelector=true 时跳过"有可见链接"过滤，用于分类选择器（空公开分类也能选）
     const forSelector = searchParams.get("forSelector") === "true";
 
-    // 分类级权限：普通用户只看公开 + 自己的
-    const categoryWhere = buildCategoryWhere(userId);
+    // 分类级权限：普通用户只看公开 + 自己的（排除被隐藏的）；管理员 manage 可见全部
+    const categoryWhere = buildCategoryWhere(userId, scope, userRole);
 
     // 根据 scope 生成链接子查询的 where 条件
     const linkWhere = buildLinkWhere(scope, userId, userRole);
@@ -42,6 +42,7 @@ export async function GET(request: Request) {
         include: {
           user: { select: { id: true, name: true, username: true, image: true } },
           children: {
+            where: categoryWhere,
             orderBy: { sortOrder: "asc" },
           },
           links: {
@@ -83,10 +84,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const userRole = (session.user as { role?: string }).role;
+    // 所有登录用户均可创建公开分类（弹窗提供「公开分类」开关，尊重用户选择）
+    const isPublic = result.data.isPublic ?? false;
 
-    // 普通用户创建的分类默认为私有（isPublic: false），管理员可创建公开分类
-    const isPublic = userRole === "admin" ? (result.data.isPublic ?? true) : false;
+    // 公开分类名称全局唯一：公开与公开不可重名（公开与私有之间允许重名）
+    if (isPublic) {
+      const dup = await prisma.category.findFirst({
+        where: { isPublic: true, name: result.data.name.trim() },
+        select: { id: true },
+      });
+      if (dup) {
+        return NextResponse.json(
+          { error: "已存在同名公开分类，请修改分类命名后重试" },
+          { status: 400 }
+        );
+      }
+    }
 
     // 生成唯一 slug
     let slug = generateSlug();
