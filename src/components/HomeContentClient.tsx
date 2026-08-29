@@ -46,16 +46,11 @@ export function HomeContentClient({ userId, linkCount, isAdmin }: Props) {
   const { items: links, total, hasMore, isLoadingMore, loading: linksLoading, sentinelRef } = useInfiniteScroll<LinkType>({
     name: "Link",
     userId,
-    autoPageSize: { cardHeight: 140, columns: () => {
-      const w = window.innerWidth;
-      if (w >= 1536) return 5;  // 2xl
-      if (w >= 1280) return 4;  // xl
-      if (w >= 1024) return 3;  // lg
-      if (w >= 640) return 2;   // sm
-      return 1;
-    }},
+    // 全量加载（个人导航站数据量小）：与分类页共用同一份数据、缓存与版本号，
+    // 分类页在前端按 categoryId 过滤。消除"多视图各自分页缓存 → 一处修改、别处不同步"的问题。
+    pageSize: 1000,
     fetchFn: (page, pageSize) =>
-      fetch(`/api/links?includePrivate=true&page=${page}&pageSize=${pageSize}&sort=recent`)
+      fetch(`/api/links?page=${page}&pageSize=${pageSize}&sort=recent`)
         .then((r) => r.json())
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });

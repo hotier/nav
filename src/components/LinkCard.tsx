@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -85,151 +85,16 @@ export function LinkCard({
   const [showQr, setShowQr] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  // 图标展示逻辑（与 faviconsnap 录入时获取配套）：
+  // favicon URL 在添加/编辑时由 faviconsnap 解析并存 DB（见 lib/recognize-url.ts），
+  // 展示时只读库渲染，无运行时解析/回退链。加载失败仅本次会话回退到默认图标，
+  // 不写 localStorage 标记（下次刷新重试）。
   const [faviconBroken, setFaviconBroken] = useState(false);
-  // 初始值直接用 link.favicon，避免首帧空白后再异步 setState 造成的“空白→加载”闪烁
-  const [faviconSrc, setFaviconSrc] = useState<string | null>(link.favicon || null);
-  const [triedRecognize, setTriedRecognize] = useState(false);
-  const [triedHunter, setTriedHunter] = useState(false);
-  const [faviconKey, setFaviconKey] = useState(0); // key 变化时强制卸载/挂载 img，避免 onError 连锁反应
 
-  // 用 ref 保存 tried 状态，避免 setTimeout 闭包读到过期值
-  const triedRecognizeRef = useRef(false);
-  const triedHunterRef = useRef(false);
-  const faviconTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const FAVICON_TIMEOUT = 8000; // 8 秒超时
-
-  // 从 URL 提取域名
-  const extractDomain = (url: string) => {
-    try {
-      const u = new URL(url);
-      return u.hostname;
-    } catch {
-      return "";
-    }
-  };
-
-  const domain = extractDomain(link.url);
-  const hunterUrl = domain ? `https://logos.hunter.io/${domain}` : "";
-
-  // 清除超时定时器
-  const clearFaviconTimeout = () => {
-    if (faviconTimeoutRef.current) {
-      clearTimeout(faviconTimeoutRef.current);
-      faviconTimeoutRef.current = null;
-    }
-  };
-
-  // 初始化：检查 localStorage 中该 favicon 是否曾被标记为失效
+  // link.favicon 变化（编辑保存/重新识别）时重置失效状态
   useEffect(() => {
-    setFaviconSrc(link.favicon || null);
-    setFaviconKey(0);
-    setTriedRecognize(false);
-    setTriedHunter(false);
-    triedRecognizeRef.current = false;
-    triedHunterRef.current = false;
-    const cached = localStorage.getItem(`nav_favicon_v2_${link.id}`);
-    if (link.favicon) {
-      if (cached) {
-        try {
-          const data = JSON.parse(cached) as { broken: boolean; url: string };
-          // 有 favicon 时仅当 broken 标记与当前 favicon 匹配才视为失效
-          if (data.broken && data.url === link.favicon) {
-            setFaviconBroken(true);
-          }
-        } catch { /* ignore */ }
-      }
-    } else {
-      // 无 favicon 时也要读取本地失效标记，避免每次刷新都重复识别失败的站点
-      if (cached) {
-        try {
-          const data = JSON.parse(cached) as { broken: boolean; url: string };
-          if (data.broken) {
-            setFaviconBroken(true);
-          }
-        } catch { /* ignore */ }
-      } else {
-        setFaviconBroken(false);
-      }
-    }
-  }, [link.favicon, link.id]);
-
-  // 无 favicon 时优先通过 HTML 解析获取（再走第三方回退链）
-  useEffect(() => {
-    if (!link.favicon && domain && !triedRecognizeRef.current && !faviconBroken) {
-      triedRecognizeRef.current = true;
-      setTriedRecognize(true);
-      fetch("/api/links/recognize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: link.url }),
-      })
-        .then((r) => r.json())
-        .then((meta: { favicon?: string; description?: string }) => {
-          if (meta.favicon) {
-            const updates: Record<string, string> = { favicon: meta.favicon };
-            if (!link.description && meta.description) updates.description = meta.description;
-            onUpdate?.(link.id, updates, true);
-          } else {
-            // HTML 解析没拿到 favicon，走第三方回退
-            triggerFaviconFallback();
-          }
-        })
-        .catch(() => {
-          // recognize 请求失败，走第三方回退
-          triggerFaviconFallback();
-        });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.favicon, domain, faviconBroken]);
-
-  // 核心回退逻辑：按优先级依次尝试
-  const triggerFaviconFallback = useCallback(() => {
-    // 每次主动切换源时 bump key，旧 img 被卸载，其 onError 不会传播过来
-    if (!triedHunterRef.current && hunterUrl) {
-      triedHunterRef.current = true;
-      setTriedHunter(true);
-      setFaviconKey((k) => k + 1);
-      setFaviconSrc(hunterUrl);
-      return;
-    }
-    // 所有源均失败，标记为失效
-    setFaviconBroken(true);
-    try {
-      localStorage.setItem(
-        `nav_favicon_v2_${link.id}`,
-        JSON.stringify({ broken: true, url: link.favicon || hunterUrl })
-      );
-    } catch { /* ignore */ }
-  }, [hunterUrl, link.id, link.favicon]);
-
-  // img onError 回调：清除超时后进入回退链
-  const handleFaviconError = useCallback(() => {
-    clearFaviconTimeout();
-    triggerFaviconFallback();
-  }, [triggerFaviconFallback]);
-
-  // img onLoad 回调：清除超时，若来自 hunter.io 则自动写入
-  const handleFaviconLoad = useCallback(() => {
-    clearFaviconTimeout();
-    if (triedHunterRef.current && faviconSrc === hunterUrl) {
-      onUpdate?.(link.id, { favicon: hunterUrl }, true);
-    }
-  }, [faviconSrc, hunterUrl, link.id, onUpdate]);
-
-  // 超时兜底仅用于原始 icon：8 秒内未加载成功也未报错 → 进入回退链
-  // hunter.io 不加超时，只靠 onError 自然驱动，确保“一旦可用不会进入下一步”
-  useEffect(() => {
-    clearFaviconTimeout();
-
-    if (!faviconSrc || faviconBroken || triedHunterRef.current) return;
-
-    faviconTimeoutRef.current = setTimeout(() => {
-      clearFaviconTimeout();
-      triggerFaviconFallback();
-    }, FAVICON_TIMEOUT);
-
-    return clearFaviconTimeout;
-  }, [faviconSrc, faviconBroken, triggerFaviconFallback]);
+    setFaviconBroken(false);
+  }, [link.favicon]);
 
   // ✅ 修复：右键菜单 + 弹窗冲突，解决页面点不动
   useEffect(() => {
@@ -325,19 +190,17 @@ export function LinkCard({
               )}
 
               <div className="flex-shrink-0">
-                {faviconSrc && !faviconBroken ? (
+                {link.favicon && !faviconBroken ? (
                   <img
-                    key={faviconKey}
-                    src={faviconSrc.startsWith("https://faviconsnap.com/")
-                      ? faviconSrc
-                      : proxyImageUrl(faviconSrc)}
+                    src={link.favicon.startsWith("https://faviconsnap.com/")
+                      ? link.favicon
+                      : proxyImageUrl(link.favicon)}
                     alt=""
                     className="h-10 w-10 rounded-xl object-cover"
-                    onError={handleFaviconError}
-                    onLoad={handleFaviconLoad}
+                    onError={() => setFaviconBroken(true)}
                   />
                 ) : null}
-                <div className={`favicon-fallback h-10 w-10 rounded-xl bg-gradient-to-br from-primary/10 to-sky-500/5 flex items-center justify-center ${faviconSrc && !faviconBroken ? "hidden" : ""}`}>
+                <div className={`favicon-fallback h-10 w-10 rounded-xl bg-gradient-to-br from-primary/10 to-sky-500/5 flex items-center justify-center ${link.favicon && !faviconBroken ? "hidden" : ""}`}>
                   <Link2 className="h-5 w-5 text-primary" />
                 </div>
               </div>

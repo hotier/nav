@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateLinkSchema } from "@/lib/validators";
-import { invalidateLinks, invalidateLinksWithOldCategory, incrementTableVersion } from "@/lib/queries";
+import { incrementTableVersion } from "@/lib/queries";
 import { canAddLinkToCategory } from "@/lib/permissions";
 import { cleanUrl } from "@/lib/recognize-url";
 
@@ -153,29 +153,8 @@ export async function PUT(
       include: { category: { select: { id: true, name: true, icon: true } } },
     });
 
-    // 如果分类发生了变更，需同时清新旧两个分类的缓存
-    if (
-      result.data.categoryId &&
-      result.data.categoryId !== existing.categoryId
-    ) {
-      invalidateLinksWithOldCategory(
-        existing.userId,
-        existing.categoryId,
-        result.data.categoryId
-      );
-      // 管理员编辑他人链接时，额外清除管理员自身的缓存
-      if (!isOwner) {
-        invalidateLinks(session.user.id, existing.categoryId);
-        invalidateLinks(session.user.id, result.data.categoryId);
-      }
-    } else {
-      invalidateLinks(existing.userId, existing.categoryId);
-      // 管理员编辑他人链接时，额外清除管理员自身的缓存
-      if (!isOwner) {
-        invalidateLinks(session.user.id, existing.categoryId);
-      }
-    }
-    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
+    // 版本号在响应返回前递增完成：新旧分类的缓存随版本键一起失效（含管理员编辑他人链接的场景）
+    await incrementTableVersion("Link");
 
     return NextResponse.json(link);
   } catch (error) {
@@ -222,12 +201,7 @@ export async function DELETE(
       where: { id },
     });
 
-    invalidateLinks(existing.userId, existing.categoryId);
-    // 管理员删除他人链接时，额外清除管理员自身的缓存（mgmt 视图 + stats）
-    if (!isOwner) {
-      invalidateLinks(session.user.id, existing.categoryId);
-    }
-    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
+    await incrementTableVersion("Link");
 
     return NextResponse.json({ success: true });
   } catch (error) {

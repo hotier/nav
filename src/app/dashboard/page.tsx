@@ -25,6 +25,8 @@ export default function DashboardPage() {
     configs: [
     {
       name: "DashboardStats",
+      // 统计随 Link/Category/User 数据变化，订阅这些表的广播实时刷新
+      subscribe: ["Link", "Category", "User"],
       fetch: () =>
         fetch("/api/dashboard/stats")
           .then((r) => r.json())

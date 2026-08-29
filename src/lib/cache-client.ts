@@ -155,19 +155,16 @@ function closeChannel(): void {
 }
 
 /**
- * 写操作成功后调用：把本地版本号同步为服务端最新版本。
- * 这样当前页的广播回调检测到“版本一致”会跳过自动刷新，
- * 而其他页面（本地版本旧）仍会重新拉取，避免当前页因自身操作被 reset 回第一页。
+ * 通知同一源内的所有页面：某张表的数据已变更，需重新拉取。
+ *
+ * 关键约束：**绝不能在这里同步写方本地版本号**（历史教训，2026-08-29 曾因此引入回归）：
+ * - BroadcastChannel 与 storage 事件都天然不回传给发送者页面，写方收不到自己的广播；
+ * - 写方的乐观更新只改内存 state，localStorage 的分页缓存仍是旧数据；
+ * - 若此时把本地版本对齐成服务端最新，刷新时会"版本一致"而信任旧缓存 → 旧数据。
+ * 正确策略：写方本地版本保持旧值，刷新/重挂载时版本不一致 → 重拉覆盖旧缓存；
+ * 其他页面/标签页收到广播后版本不一致 → 真正重拉（见 useDataCache / useInfiniteScroll）。
  */
-export async function syncLocalVersion(table: string, userId?: string | null): Promise<void> {
-  const serverVer = await getServerVersion(table);
-  if (serverVer) {
-    setLocalVersion(table, serverVer, userId);
-  }
-}
-
-/** 通知同一源内的所有页面：某张表的数据已变更，需重新拉取 */
-export function notifyDataChanged(table: string): void {
+export async function notifyDataChanged(table: string): Promise<void> {
   try {
     ensureChannel("nav-cache-sync");
     if (_channel) {
@@ -209,53 +206,8 @@ export function subscribeDataChanged(onChange: (table: string) => void): () => v
 }
 
 // ==================== 乐观更新辅助 ====================
-
-/**
- * 乐观添加：操作前先写入缓存（临时用当前缓存的 total+1 作为 total）
- * 成功后由 syncPageCache 重新拉取精确数据
- */
-export function optimisticAddToCache<T>(
-  table: string,
-  page: number,
-  item: T,
-  userId?: string | null,
-): { previousData: T[] | null; previousTotal: number } {
-  const cached = readPageCache<T>(table, page, userId);
-  const previousData = cached?.data || null;
-  const previousTotal = cached?.total || 0;
-
-  // 写入新增后数据（乐观）
-  writePageCache(
-    table,
-    page,
-    previousData ? [item, ...previousData] : [item],
-    previousTotal + 1,
-    getLocalVersion(table, userId) || 1,
-    userId,
-  );
-
-  return { previousData, previousTotal };
-}
-
-/**
- * 回滚缓存：操作失败时恢复到操作前的状态
- */
-export function rollbackCache<T>(
-  table: string,
-  page: number,
-  data: T[] | null,
-  total: number,
-  version?: number,
-  userId?: string | null,
-): void {
-  if (data === null) {
-    // 无法恢复，清除分页缓存
-    try {
-      localStorage.removeItem(cachePageKey(table, page, userId));
-    } catch {
-      // ignore
-    }
-    return;
-  }
-  writePageCache(table, page, data, total, version || getLocalVersion(table, userId), userId);
-}
+//
+// 说明：此前的 optimisticAddToCache / rollbackCache（写 localStorage 分页缓存）已删除——
+// 它们硬编码 ("Link", page 1) 的键，与真实视图缓存名（Link:category:* / *_ps40 等）不匹配，
+// 写入的键没有任何读取方。乐观 UI 更新统一走各 Hook 的 setItems / setData（内存 state），
+// 跨页面一致性由 notifyDataChanged（版本同步 + 广播）驱动重拉保证。

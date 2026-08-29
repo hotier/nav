@@ -7,6 +7,7 @@ import {
   scoreAndSort,
   searchLinks as searchLinksFromModule,
 } from "@/lib/search";
+import { buildCategoryWhere } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,10 +67,15 @@ export async function POST(request: Request) {
     // 链接搜索统一走 lib/search.ts（含当前用户可见性）
     const links = await searchLinksFromModule(query, session.user.id);
 
+    // 分类搜索：复用分类权限真源（未登录/普通用户搜不到他人私有分类名），并只返回安全字段
     const categories = await prisma.category.findMany({
       where: {
-        name: { contains: query },
+        AND: [
+          buildCategoryWhere(session.user.id) as Record<string, unknown>,
+          { name: { contains: query } },
+        ],
       },
+      select: { id: true, name: true, icon: true },
       take: 10,
     });
 

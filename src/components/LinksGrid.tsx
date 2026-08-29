@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/sortable";
 import { LinkCard } from "@/components/LinkCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useSession } from "next-auth/react";
 import { notifyDataChanged } from "@/lib/cache-client";
 import type { Category, Link as LinkType } from "@/types";
 import toast from "react-hot-toast";
@@ -27,9 +28,12 @@ interface LinksGridProps {
   categories: Category[];
   isAdmin: boolean;
   searchQuery?: string;
+  /** 是否允许拖拽排序：搜索结果等派生视图应传 false（拖拽会按子集重编号污染全局顺序） */
+  draggable?: boolean;
 }
 
-export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuery }: LinksGridProps) {
+export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuery, draggable = true }: LinksGridProps) {
+  const { data: session } = useSession();
   const [links, setLinks] = useState(initialLinks);
   const [isHydrated, setIsHydrated] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -97,17 +101,23 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
     }
   };
 
+  // 与服务端一致的排序规则：置顶优先，组内按 sortOrder 升序（= 创建顺序）
+  // 注意：绝不能用 createdAt 倒序——它与 sortOrder 升序相反，会导致编辑后列表顺序错乱
+  const sortLinks = (arr: LinkType[]) =>
+    [...arr].sort((a, b) => {
+      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    });
+
   const handleUpdate = async (id: string, data: Partial<LinkType>, silent?: boolean) => {
     const prevLinks = links;
-    // 乐观更新 UI（策略4：先更新本地缓存+视图，页面瞬时响应）
-    setLinks((prev) =>
-      prev
-        .map((l) => (l.id === id ? { ...l, ...data } : l))
-        .sort((a, b) => {
-          if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        })
-    );
+    const pinChanged =
+      "isPinned" in data && data.isPinned !== links.find((l) => l.id === id)?.isPinned;
+    // 乐观更新 UI：只替换该链接字段，保持现有顺序（置顶状态变化时才按服务端规则重排）
+    setLinks((prev) => {
+      const next = prev.map((l) => (l.id === id ? { ...l, ...data } : l));
+      return pinChanged ? sortLinks(next) : next;
+    });
     try {
       const response = await fetch(`/api/links/${id}`, {
         method: "PUT",
@@ -119,11 +129,7 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
         const updated = await response.json();
         setLinks((prev) => {
           const next = prev.map((link) => (link.id === id ? { ...link, ...updated } : link));
-          // 置顶切换后按规则重排序（最新在前）
-          return next.sort((a, b) => {
-            if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          });
+          return pinChanged ? sortLinks(next) : next;
         });
         if (!silent) toast.success("更新成功");
         // 广播数据变更，让其他已打开的链接页面实时刷新
@@ -207,6 +213,42 @@ export function LinksGrid({ links: initialLinks, categories, isAdmin, searchQuer
 
   // Admin view - only render drag and drop after hydration to prevent mismatch
   if (!isHydrated) {
+    return (
+      <>
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">
+          {links.map((link) => (
+            <LinkCard
+              key={link.id}
+              link={link}
+              categories={categories}
+              isAdmin={isAdmin}
+              searchQuery={searchQuery}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+              isDraggable={false}
+            />
+          ))}
+        </div>
+        <ConfirmDialog
+          open={!!deleteTargetId}
+          onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}
+          title="删除链接"
+          description={
+            <p>确定要删除这个链接吗？<span className="mt-2 block text-danger text-sm">此操作不可撤销。</span></p>
+          }
+          confirmLabel="确认删除"
+          onConfirm={handleConfirmDelete}
+          loading={isDeleting}
+        />
+      </>
+    );
+  }
+
+  // 拖拽仅在管理员 + 允许拖拽的视图（非搜索结果）下启用：
+  // 派生视图（搜索结果）拖拽会按子集重编号污染全局 sortOrder
+  const canDrag = isAdmin && draggable;
+
+  if (!canDrag) {
     return (
       <>
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 animate-fade-in-up delay-100">

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { invalidateLinks, incrementTableVersion } from "@/lib/queries";
+import { incrementTableVersion } from "@/lib/queries";
 
 export async function PUT(request: Request) {
   try {
@@ -31,8 +31,7 @@ export async function PUT(request: Request) {
       )
     );
 
-    invalidateLinks(session.user.id);
-    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
+    await incrementTableVersion("Link");
 
     return NextResponse.json({ success: true });
   } catch (error) {

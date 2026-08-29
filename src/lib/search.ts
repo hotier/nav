@@ -82,7 +82,7 @@ export async function searchLinks(
   const links = await prisma.link.findMany({
     where,
     include: { category: true },
-    orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
+    orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
   });
   const sorted = scoreAndSort(links, q);
   return sorted.slice(0, limit);

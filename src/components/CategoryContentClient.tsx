@@ -61,27 +61,25 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
 
   const category = findCategoryBySlug(slug, categories);
   const categoryId = category?.id;
-  const linkCount = (category?._count as { links?: number })?.links ?? 0;
 
-  // 按分类分页查询：缓存名带 categoryId 维度，分类定位完成（slug→id）后才拉取该分类数据。
-  // 不再全量拉取 + 客户端过滤，也不再传 includePrivate（可见性完全由后端 buildLinkWhere 决定）。
-  const { items: categoryLinks, loading: linksLoading, isLoadingMore, sentinelRef } = useInfiniteScroll<LinkType>({
-    name: categoryId ? `Link:category:${categoryId}` : "Link:category:pending",
-    versionTable: "Link",
+  // 全部链接数据（与首页共用 name="Link" —— 同一取数渠道/缓存/版本号）：
+  // 分类页是全部页的分类视图，前端按 categoryId 过滤展示。
+  // 任意页面（首页/分类页/后台）编辑链接后广播刷新，所有页面拉取同一份全量数据，天然同步。
+  // enabled 门控：categoryId 未定位（分类树未加载完成）前禁止初始化/拉取/写缓存——
+  // 否则会以错误参数拉取并污染缓存，参数就绪后旧数据还会泄漏到渲染（历史 bug）。
+  const { items: allLinks, loading: linksLoading, isLoadingMore, sentinelRef } = useInfiniteScroll<LinkType>({
+    name: "Link",
+    enabled: !!categoryId,
     userId,
-    autoPageSize: { cardHeight: 140, columns: () => {
-      const w = window.innerWidth;
-      if (w >= 1536) return 5;
-      if (w >= 1280) return 4;
-      if (w >= 1024) return 3;
-      if (w >= 640) return 2;
-      return 1;
-    }},
+    pageSize: 1000,
     fetchFn: (page, pageSize) =>
-      fetch(`/api/links?categoryId=${categoryId ?? ""}&scope=home&sort=recent&page=${page}&pageSize=${pageSize}`)
+      fetch(`/api/links?page=${page}&pageSize=${pageSize}&sort=recent`)
         .then((r) => r.json())
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
+
+  // 前端过滤：本分类可见的链接（与后端 buildLinkWhere 同一可见性，全量数据里直接筛）
+  const categoryLinks = (allLinks as LinkType[]).filter((l) => l.categoryId === categoryId);
 
   // 优先显示骨架：只要还在加载（未水合 / 链接加载中 / 分类加载中）就先展示骨架，
   // 确认无数据、失败或超时后才切换到空数据/内容。
@@ -101,6 +99,9 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
     );
   }
 
+  // 分类链接总数 = 全量数据中该分类过滤后的数量（与页面实际渲染一致）
+  const displayCount = categoryLinks.length;
+
   // 缓存命中：找到匹配分类 → 直接渲染
   if (category && categories.length > 0) {
     return (
@@ -117,7 +118,7 @@ export function CategoryContentClient({ userId, slug, isAdmin }: Props) {
             )}
             {category?.name || ""}
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({linkCount})
+              ({displayCount})
             </span>
           </h2>
         </div>

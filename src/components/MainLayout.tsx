@@ -24,11 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  notifyDataChanged,
-  optimisticAddToCache,
-  rollbackCache,
-} from "@/lib/cache-client";
+import { notifyDataChanged } from "@/lib/cache-client";
 import toast from "react-hot-toast";
 
 interface MainLayoutProps {
@@ -146,9 +142,6 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
   }) => {
     setIsSubmitting(true);
     setShowAddLink(false);
-    // 乐观写入缓存（策略4：先更新本地缓存，页面瞬时响应）
-    const { previousData, previousTotal } = optimisticAddToCache("Link", 1, data as unknown as Record<string, unknown>, session?.user?.id);
-
     try {
       const response = await fetch("/api/links", {
         method: "POST",
@@ -161,13 +154,10 @@ export function MainLayout({ children, categories }: MainLayoutProps) {
         notifyDataChanged("Link");
         toast.success("链接添加成功");
       } else {
-        // 回滚缓存
-        rollbackCache("Link", 1, previousData, previousTotal, undefined, session?.user?.id);
         const error = await response.json();
         toast.error(error.error || "添加失败");
       }
     } catch {
-      rollbackCache("Link", 1, previousData, previousTotal, undefined, session?.user?.id);
       toast.error("添加失败");
     } finally {
       setIsSubmitting(false);

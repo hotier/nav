@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createLinkSchema } from "@/lib/validators";
-import { invalidateLinks, incrementTableVersion } from "@/lib/queries";
+import { incrementTableVersion, getTableVersion } from "@/lib/queries";
 import { swr } from "@/lib/cache";
 import { buildLinkWhere, canAddLinkToCategory, type LinkViewScope } from "@/lib/permissions";
 import { cleanUrl } from "@/lib/recognize-url";
@@ -28,13 +28,15 @@ export async function GET(request: Request) {
     const where: Record<string, unknown> = { ...permissionWhere };
     if (categoryId) where.categoryId = categoryId;
 
-    // 排序规则：置顶始终优先，二序按 sort 参数切换
+    // 排序规则：置顶始终优先，二序按 sort 参数切换；createdAt 作 tie-breaker
+    // （sortOrder 在创建时按分类内编号，跨分类会重复，缺 tie-breaker 时同值顺序不稳定）
     const orderBy: Record<string, string>[] = sort === "recent"
-      ? [{ isPinned: "desc" }, { createdAt: "desc" }]
-      : [{ isPinned: "desc" }, { sortOrder: "asc" }];
+      ? [{ isPinned: "desc" }, { createdAt: "desc" }, { sortOrder: "asc" }]
+      : [{ isPinned: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }];
 
-    // SWR 缓存 — 按 scope/用户/分类/分页/排序区分缓存键（结构化，失效对称）
-    const cacheKey = linkListKey(userId, scope, categoryId, page, sort);
+    // 版本化缓存键：版本号编进键，写操作递增版本后全实例天然失效
+    const version = await getTableVersion("Link");
+    const cacheKey = linkListKey(version, userId, scope, categoryId, page, sort);
     const { data: links, total } = await swr(cacheKey, async () => {
       const [data, total] = await Promise.all([
         prisma.link.findMany({
@@ -114,9 +116,10 @@ export async function POST(request: Request) {
       );
     }
 
+    // 用户内全局编号（2026-08-29 方案 A：与拖拽重排的全局编号体系统一，
+    // 避免“分类内 max+1”与全局编号混用导致新建链接插到列表中间）
     const maxSortOrder = await prisma.link.aggregate({
       where: {
-        categoryId: result.data.categoryId,
         userId: session.user.id,
       },
       _max: { sortOrder: true },
@@ -130,8 +133,8 @@ export async function POST(request: Request) {
       },
     });
 
-    invalidateLinks(session.user.id, result.data.categoryId);
-    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
+    // 版本号在响应返回前递增完成（await）：客户端重拉时任何实例都会用新键查到新数据
+    await incrementTableVersion("Link");
 
     return NextResponse.json(link, { status: 201 });
   } catch (error) {

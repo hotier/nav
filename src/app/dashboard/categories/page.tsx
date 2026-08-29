@@ -61,11 +61,17 @@ export default function CategoriesPage() {
   const uid = session?.user?.id;
   const isAdmin = (session?.user as { role?: string })?.role === "admin";
 
-  // 判断当前用户是否可以管理此分类（编辑/删除）
+  // 判断当前用户是否可以管理此分类（编辑/删除/切换可见性）
+  // 规则：自己的分类（公开/私有）均可管理；管理员额外可管理所有公开分类，不能管理他人私有分类
   const canManage = (category: Category) => {
-    if (isAdmin) return true;
-    // 普通用户只能管理自己创建的非公开分类
-    return !category.isPublic && category.userId === uid;
+    if (category.userId === uid) return true;
+    return isAdmin && category.isPublic;
+  };
+
+  // 链接可编辑边界（与服务端一致）：自己的链接可编辑；管理员可编辑所有公开链接
+  const canEditLink = (link: LinkType) => {
+    if (link.userId === uid) return true;
+    return isAdmin && !link.isPrivate;
   };
 
   // Category 数据
@@ -74,20 +80,22 @@ export default function CategoriesPage() {
     { name: "Category:mgmt:v2", versionTable: "Category", fetch: () => fetch("/api/categories?scope=manage").then(r => r.json()).then(d => ({ data: d, total: d.length })) },
   ], userId: uid });
 
-  // Link 数据 — 无限滚动加载
-  const { items: allLinks, hasMore, isLoadingMore, sentinelRef, setItems: setLinkData } = useInfiniteScroll<LinkType>({
-    name: "Link:mgmt:v2",
+  // Link 数据 — 与首页/链接管理页共用同一套数据源（name/pageSize/fetch 一致 → 同一缓存、同一版本号）：
+  // 数据范围 = home 可见性（自己的全部含私有 + 他人公开），普通用户在渲染层过滤出"仅自己的"。
+  const { items: allLinks, isLoadingMore, sentinelRef, setItems: setLinkData } = useInfiniteScroll<LinkType>({
+    name: "Link",
     versionTable: "Link",
-    autoPageSize: true,
     userId: uid,
+    pageSize: 1000,
     fetchFn: (page, pageSize) =>
-      fetch(`/api/links?includePrivate=true&page=${page}&pageSize=${pageSize}&scope=manage`)
+      fetch(`/api/links?page=${page}&pageSize=${pageSize}&sort=recent`)
         .then(r => r.json())
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
 
   const categories = (cacheData["Category:mgmt:v2"] || []) as Category[];
 
+  // 分类表格的链接预览/数量展示 home 可读范围（所有用户公开链接 + 自己的全部含私有）
   const categoryLinks = useMemo(() => {
     const grouped: Record<string, LinkType[]> = {};
     allLinks.forEach((link) => {
@@ -205,7 +213,9 @@ export default function CategoriesPage() {
 
   const refreshLinks = async () => {
     try {
-      const res = await fetch("/api/links?includePrivate=true&page=1&pageSize=100");
+      // 与主数据源一致（首页共用 name="Link" + home scope + 全量 pageSize），
+      // 避免 setLinkData 用错误范围/不完整数据覆盖列表
+      const res = await fetch("/api/links?page=1&pageSize=1000&sort=recent");
       if (res.ok) {
         const { data: all } = await res.json();
         setLinkData(() => all);
@@ -224,7 +234,8 @@ export default function CategoriesPage() {
     try {
       // 如果是编辑，且选择了移动目标分类，则将当前分类下所有链接移走
       if (editingCategory && moveTargetCategoryId && moveTargetCategoryId !== "_keep") {
-        const currentLinks = categoryLinks[editingCategory.id] || [];
+        // 仅移动当前用户可编辑的链接（他人公开链接不可被移动）
+        const currentLinks = (categoryLinks[editingCategory.id] || []).filter((link) => canEditLink(link));
         const results = await Promise.allSettled(
           currentLinks.map((link) =>
             fetch(`/api/links/${link.id}`, {
@@ -263,6 +274,10 @@ export default function CategoriesPage() {
         setEditingCategory(null);
         setFormData({ name: "", parentId: "", icon: "", isPublic: false });
         setMoveTargetCategoryId("");
+        // 广播：分类变更（含编辑弹窗里的 isPublic 开关）影响链接可见范围，
+        // 可能已批量移动链接 → 双发，让首页/分类页等已打开页面实时刷新
+        notifyDataChanged("Category");
+        notifyDataChanged("Link");
         await Promise.all([refreshCategories(), refreshLinks()]);
       } else {
         const error = await response.json();
@@ -291,6 +306,9 @@ export default function CategoriesPage() {
 
       if (response.ok) {
         toast.success("分类已删除");
+        // 删除分类会级联删除其下链接 → 双发广播，首页/分类页等已打开页面实时刷新
+        notifyDataChanged("Category");
+        notifyDataChanged("Link");
         refreshLinks();
       } else {
         // 回滚
@@ -328,10 +346,11 @@ export default function CategoriesPage() {
   const rootCategories = categories.filter((c) => !c.parentId);
 
   const stats = {
-    totalLinks: categories.reduce((sum, c) => sum + (c.links?.length || 0), 0),
+    // 统一基于 allLinks（home 可读范围），与链接管理页/仪表盘口径一致
+    totalLinks: allLinks.length,
     totalCategories: categories.length,
-    publicLinks: 0,
-    privateLinks: 0,
+    publicLinks: allLinks.filter((l) => !l.isPrivate).length,
+    privateLinks: allLinks.filter((l) => l.isPrivate).length,
   };
 
   const renderLinkPreview = (categoryId: string) => {
@@ -387,7 +406,7 @@ export default function CategoriesPage() {
           <span className="text-sm font-medium">{links.length}</span>
         </TableCell>
         <TableCell>
-          {isAdmin ? (
+          {manageable ? (
             <div className="relative inline-block">
               <button
                 onClick={() => {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateCategorySchema } from "@/lib/validators";
-import { invalidateCategories, incrementTableVersion } from "@/lib/queries";
+import { incrementTableVersion } from "@/lib/queries";
 import { buildLinkWhere, buildCategoryWhere, canManageCategory, type LinkViewScope } from "@/lib/permissions";
 
 export async function GET(
@@ -36,7 +36,7 @@ export async function GET(
         },
         links: {
           where: linkWhere,
-          orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
+          orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
         },
       },
     });
@@ -107,8 +107,7 @@ export async function PUT(
       data: updateData,
     });
 
-    invalidateCategories();
-    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
+    await incrementTableVersion("Category");
 
     return NextResponse.json(category);
   } catch (error) {
@@ -151,8 +150,7 @@ export async function DELETE(
       where: { id },
     });
 
-    invalidateCategories();
-    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
+    await incrementTableVersion("Category");
 
     return NextResponse.json({ success: true });
   } catch (error) {

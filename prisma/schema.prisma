@@ -3,8 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // 迁移（migrate / db push）走直连端点，绕过 PgBouncer transaction 模式
+  directUrl = env("DIRECT_URL")
 }
 
 model Account {

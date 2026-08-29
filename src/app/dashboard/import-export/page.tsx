@@ -14,7 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { readPageCache, writePageCache, getServerVersion } from "@/lib/cache-client";
+import { readPageCache, writePageCache, getServerVersion, notifyDataChanged } from "@/lib/cache-client";
 
 interface Category {
   id: string;
@@ -77,6 +77,9 @@ export default function ImportExportPage() {
       const result = await response.json();
 
       if (response.ok) {
+        // 导入会批量创建分类+链接 → 广播，让首页/分类页等已打开页面实时刷新
+        notifyDataChanged("Link");
+        notifyDataChanged("Category");
         toast.success(result.message || "导入成功");
         fetchCategories();
         router.refresh();

@@ -112,12 +112,12 @@ export function canAddLinkToCategory(
  * | 场景    | 用户身份       | 可见范围                          |
  * |--------|--------------|----------------------------------|
  * | home   | 未登录         | 公开链接（且所属分类公开）          |
- * | home   | 管理员         | 所有公开 + 自己的私人             |
- * | home   | 普通用户       | 所有公开（含分类公开） + 自己的私人 |
- * | manage | 管理员         | 自己的全部 + 别人的公开           |
+ * | home   | 管理员/普通用户 | 自己的全部 + 别人的公开（且分类公开）|
+ * | manage | 管理员         | 自己的全部 + 别人的公开（且分类公开）|
  * | manage | 普通用户       | 仅自己的全部（公开+私人）         |
  *
- * 注：私有分类下的链接一律视作私有，不会对非所有者公开。
+ * 注：home 与 manage 对管理员规则相同（合并实现）；
+ *     私有分类下的链接一律视作私有，不会对非所有者公开。
  */
 export function buildLinkWhere(
   scope: LinkViewScope,
@@ -129,23 +129,13 @@ export function buildLinkWhere(
     return { isPrivate: false, category: { isPublic: true } };
   }
 
-  if (scope === "home") {
-    if (userRole === "admin") {
-      // 管理员首页 → 自己的全部 + 别人的公开（且分类也公开）
-      return { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] };
-    }
-    // 普通用户首页 → 自己的全部 + 别人的公开（且分类也公开）
-    return { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] };
+  // 普通用户的管理后台 → 仅自己的（home 与管理员规则相同）
+  if (scope === "manage" && userRole !== "admin") {
+    return { userId };
   }
 
-  // manage 场景
-  if (userRole === "admin") {
-    // 管理员 → 自己的全部 + 别人的公开（且分类也公开）
-    return { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] };
-  }
-
-  // 普通用户 → 仅自己的
-  return { userId };
+  // 登录用户 home 视野 + 管理员（任意场景）：自己的全部 + 别人的公开（且分类公开）
+  return { OR: [{ userId }, { isPrivate: false, category: { isPublic: true } }] };
 }
 
 /**

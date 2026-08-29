@@ -51,6 +51,10 @@ interface UseInfiniteScrollOptions<T> {
   /** 版本号用的表级 key（默认取 name）。当 name 带维度（如 Link:category:xxx）时，
    *  应传表级 key（如 "Link"），保证一次数据变更能让所有同表页面缓存一起失效 */
   versionTable?: string;
+  /** 是否启用加载。为 false 时不初始化/不拉取/不写缓存/不订阅广播（loading 恒 true）。
+   *  适用于依赖前置数据（如分类定位）才能确定查询参数的场景：
+   *  避免在参数未就绪时用错误参数（如空 categoryId）拉取全量数据并污染缓存。 */
+  enabled?: boolean;
   /** 分页拉取函数，传入页码返回 { data, total }；pageSize 通过第二个参数动态传入 */
   fetchFn: (page: number, pageSize: number) => Promise<PageResult<T>>;
   /** 每页条数，默认 20；若启用 autoPageSize 则此值作为兜底 */
@@ -103,10 +107,17 @@ export function useInfiniteScroll<T>({
   pageSize: initialPageSize = 20,
   autoPageSize,
   userId,
+  enabled = true,
 }: UseInfiniteScrollOptions<T>): UseInfiniteScrollReturn<T> {
   // 版本号 key：默认用 name；带维度（如 Link:category:xxx）时用表级 versionTable，
   // 保证数据变更（incrementTableVersion("Link")）能联动失效所有同表页面缓存
   const versionKey = versionTable || name;
+
+  // 本地版本号按「视图」隔离（表级版本号 + 视图名），避免多视图互相覆盖：
+  // 若共享同一个本地版本号，首页重拉后 setLocalVersion 会把版本同步到最新，
+  // 分类页（Link:category:* 旧缓存）会误以为自己的缓存也是最新的而跳过重拉 → 数据不同步。
+  // 各视图独立记录「最后一次拉取时的服务端版本」，服务端版本更新时各自触发重拉。
+  const localVersionKey = `${versionKey}__view__${name}`;
   const [items, setItemsState] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -153,6 +164,10 @@ export function useInfiniteScroll<T>({
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
 
+  // 存 enabled 引用：入口处即时判断，避免闭包拿到旧值
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
   const uidDep = userId || null;
 
   // ===== prefetchNextPage：静默预取下一页写入缓存（不追加到 items）=====
@@ -181,7 +196,7 @@ export function useInfiniteScroll<T>({
 
   // ===== loadNextPage：使用 ref 确保所有闭包拿到最新引用 =====
   const loadNextPage = useCallback(async () => {
-    if (loadingRef.current || !hasMoreRef.current) return;
+    if (loadingRef.current || !hasMoreRef.current || !enabledRef.current) return;
     loadingRef.current = true;
     setIsLoadingMore(true);
 
@@ -205,7 +220,7 @@ export function useInfiniteScroll<T>({
         result = fetched;
         const serverVer = await getServerVersion(versionKey);
         writePageCache(cacheName, nextPage, result.data, result.total, serverVer || 1, currentUserId);
-        setLocalVersion(versionKey, serverVer || 1, currentUserId); // 同步版本号 key
+        setLocalVersion(localVersionKey, serverVer || 1, currentUserId); // 同步本视图版本号
       }
 
       // 基于页码与总量计算是否还有更多（不在 updater 内修改 ref/state，保证 React 19 下稳定）
@@ -235,7 +250,20 @@ export function useInfiniteScroll<T>({
 
   // ===== 初始化：缓存优先 + 后台同步 =====
   useEffect(() => {
+    // enabled=false：查询参数未就绪（如分类页 categoryId 未定位），不初始化——
+    // 不拉取、不写缓存、不同步版本号。若此时用错误参数（如空 categoryId）拉取，
+    // 会拿到全量数据污染本视图缓存，并在参数就绪后泄漏到渲染（历史 bug）。
+    if (!enabled) return;
     let cancelled = false;
+
+    // name/enabled 变化导致重新初始化时，重置所有状态：
+    // 防止旧 name（如 pending 占位）的数据泄漏到新视图
+    setItemsState([]);
+    setTotal(0);
+    setLoading(true);
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    setHasMore(true);
 
     const setHasMoreBoth = (v: boolean) => {
       hasMoreRef.current = v;
@@ -259,10 +287,10 @@ export function useInfiniteScroll<T>({
         setHasMoreBoth(mightBeMoreFromCache);
       }
 
-      // 2. 后台比对版本号（版本号基于原始表名，不含 pageSize 后缀）
+      // 2. 后台比对版本号（服务端版本基于表级 versionKey；本地版本按视图隔离）
       try {
         const serverVer = await getServerVersion(versionKey);
-        const localVer = getLocalVersion(versionKey, currentUserId);
+        const localVer = getLocalVersion(localVersionKey, currentUserId);
 
         if (localVer && localVer === serverVer) {
           // 版本一致 → 用缓存。但缓存为空时不能直接信任（可能是历史瞬时错误写入的空缓存），
@@ -290,7 +318,7 @@ export function useInfiniteScroll<T>({
         }
 
         writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
-        setLocalVersion(versionKey, serverVer || 1, currentUserId); // 同步版本号 key
+        setLocalVersion(localVersionKey, serverVer || 1, currentUserId); // 同步本视图版本号
         if (!cancelled) {
           setItemsState(result.data);
           setTotal(result.total);
@@ -322,7 +350,7 @@ export function useInfiniteScroll<T>({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, uidDep]);
+  }, [name, uidDep, enabled]);
 
   // ===== IntersectionObserver + 滚动兜底：触底加载 =====
   // 创建 observer（只依赖 name，创建一次）
@@ -383,6 +411,7 @@ export function useInfiniteScroll<T>({
   }, []);
 
   const refresh = useCallback(async () => {
+    if (!enabledRef.current) return; // 参数未就绪，不应拉取
     const ps = pageSizeRef.current;
     const cacheName = cacheNameRef.current;
     const currentUserId = userIdRef.current || null;
@@ -393,7 +422,7 @@ export function useInfiniteScroll<T>({
 
       const serverVer = await getServerVersion(versionKey);
       writePageCache(cacheName, 1, result.data, result.total, serverVer || 1, currentUserId);
-      setLocalVersion(versionKey, serverVer || 1, currentUserId); // 同步版本号 key
+      setLocalVersion(localVersionKey, serverVer || 1, currentUserId); // 同步本视图版本号
 
       const stillMore = result.data.length < result.total;
       setItemsState(result.data);
@@ -415,6 +444,8 @@ export function useInfiniteScroll<T>({
   }, [refresh]);
 
   useEffect(() => {
+    // enabled=false：参数未就绪，不订阅广播（避免用错误参数触发 refresh）
+    if (!enabled) return;
     // 收到广播时，只响应本表（versionKey）相关的变更，避免无谓重拉。
     // 链接相关表（Link / Link:category:* / Link:mgmt:v2 等）统一响应 "Link" 广播，
     // 保证任意页面改链接，所有链接页面都能实时同步。
@@ -425,22 +456,20 @@ export function useInfiniteScroll<T>({
         name === table ||
         (table === "Link" && (versionKey === "Link" || versionKey.startsWith("Link:")));
       if (!isLinkFamily) return;
-      // 版本号已变化才真正重拉（避免与自身操作重复拉取）
+      // 版本号已变化才真正重拉（写方自身未同步本视图版本号，会命中“版本不一致”触发）
       const currentUserId = userIdRef.current || null;
       getServerVersion(versionKey).then((serverVer) => {
-        const localVer = getLocalVersion(versionKey, currentUserId);
+        const localVer = getLocalVersion(localVersionKey, currentUserId);
         if (serverVer && serverVer !== localVer) {
-          // 收到数据变更广播：不做任何本地写入。
-          // 关键原因：writePageCache 内部会 setLocalVersion，若在这里写缓存会把本地版本
-          // 同步成最新，导致刷新时“版本一致”而读到旧缓存。因此保持本地版本为旧值，
-          // 刷新/重新进入时因版本不一致重新拉取最新数据，保证数据正确。
+          // 从第一页重新拉取，保证数据与最新版本对齐
+          void refreshRef.current();
         }
       });
     };
     const unsubscribe = subscribeDataChanged(tableMatcher);
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [versionKey, name]);
+  }, [versionKey, name, enabled]);
 
   return {
     items,

@@ -129,6 +129,7 @@ export default function SearchContent() {
           categories={categories}
           isAdmin={isAdmin}
           searchQuery={query}
+          draggable={false}
         />
       )}
     </>

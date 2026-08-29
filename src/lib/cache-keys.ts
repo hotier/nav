@@ -1,16 +1,20 @@
 /**
- * 结构化缓存键生成器
+ * 结构化缓存键生成器（版本化键 / generation-token 方案）
  *
- * 所有服务端缓存键集中在此生成，确保「写入失效」与「读取键」始终对称，
- * 避免散落手写字符串导致的越权残留（跨用户命中彼此私有缓存）。
+ * 设计（Vercel serverless 多实例环境）：
+ *   - 失效不靠前缀清除（跨实例不可行），靠「数据版本号编进键」：
+ *     版本递增 → 所有实例天然 miss → 查 DB 新数据；旧键成孤儿，随实例回收/TTL 消亡。
+ *   - 版本号存 DB（AppSetting: version:{Table}），跨实例天然正确。
+ *     读取入口：queries.getTableVersion（直查 DB，禁止缓存——旧版本号会导致旧键→旧数据）。
+ *   - 本模块保持纯函数，无 IO。
  *
  * 键结构约定：
- *   links:v1:user:{uid|anon}:{scopeKey}:{catId|all}:p{page}:{sort}
- *   categories:v1:user:{uid|anon}:{scopeKey}
- *   links:count:v1:user:{uid|anon}
- *   dashboard:stats:v1:{userId}
+ *   links:v2:ver{N}:user:{uid|anon}:{pub|mgmt}:{catId|all}:p{page}:{sort}
+ *   categories:v2:ver{N}:user:{uid|anon}:{pub|mgmt}
+ *   links:count:v2:ver{N}:user:{uid|anon}
+ *   dashboard:stats:v2:ver{N}:{userId}
  *
- * 失效不变量：任何失效操作都带有 user 维度前缀，绝不出现无 user 维度的 `links` 前缀。
+ * 不变量：任何键都带 ver 段；任何写操作必须 await incrementTableVersion（写路径）。
  */
 
 import type { LinkViewScope } from "@/lib/permissions";
@@ -23,6 +27,7 @@ function normUid(userId: string | undefined): string {
 
 /** 链接列表键（GET /api/links 的 SWR 键） */
 export function linkListKey(
+  version: number,
   userId: string | undefined,
   scope: LinkViewScope,
   categoryId?: string | null,
@@ -32,42 +37,22 @@ export function linkListKey(
   const uid = normUid(userId);
   const scopeKey = cacheScope(scope);
   const cat = categoryId || "all";
-  return `links:v1:user:${uid}:${scopeKey}:${cat}:p${page}:${sort}`;
+  return `links:v2:ver${version}:user:${uid}:${scopeKey}:${cat}:p${page}:${sort}`;
 }
 
 /** 分类列表键（GET /api/categories 的 SWR 键） */
-export function categoryKey(userId: string | undefined, scope: LinkViewScope): string {
+export function categoryKey(version: number, userId: string | undefined, scope: LinkViewScope): string {
   const uid = normUid(userId);
   const scopeKey = cacheScope(scope);
-  return `categories:v1:user:${uid}:${scopeKey}`;
+  return `categories:v2:ver${version}:user:${uid}:${scopeKey}`;
 }
 
 /** 链接计数键（getLinkCount） */
-export function linkCountKey(userId: string | undefined): string {
-  return `links:count:v1:user:${normUid(userId)}`;
+export function linkCountKey(version: number, userId: string | undefined): string {
+  return `links:count:v2:ver${version}:user:${normUid(userId)}`;
 }
 
-/** 仪表盘统计键 */
-export function dashboardStatsKey(userId: string): string {
-  return `dashboard:stats:v1:${userId}`;
-}
-
-/** 某用户全部链接缓存前缀（用于失效） */
-export function prefixByUser(userId: string | undefined): string {
-  return `links:v1:user:${normUid(userId)}:`;
-}
-
-/** 匿名公开视图前缀（失效公开页缓存） */
-export function prefixPublicAnon(): string {
-  return `links:v1:user:anon:`;
-}
-
-/** 登录用户浏览公开页的前缀（自己登录态下的 pub 视图） */
-export function prefixPublicUser(userId: string): string {
-  return `links:v1:user:pub:${userId}:`;
-}
-
-/** 分类缓存前缀（含 anon / 指定用户） */
-export function prefixCategoryByUser(userId: string | undefined): string {
-  return `categories:v1:user:${normUid(userId)}:`;
+/** 仪表盘统计键（随 Link 数据版本翻页，DashboardStats 版本由 incrementTableVersion 联动维护） */
+export function dashboardStatsKey(version: number, userId: string): string {
+  return `dashboard:stats:v2:ver${version}:${userId}`;
 }

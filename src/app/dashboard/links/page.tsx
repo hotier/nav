@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { Plus, Search, Trash2, RefreshCw, CheckCircle, XCircle, Link2, Globe, Lock, Edit, ChevronDown, Check, Loader2, Home, AlertTriangle, CheckSquare, MoveRight, Folders, X, User } from "lucide-react";
@@ -67,6 +67,7 @@ function highlightText(text: string, query: string) {
 export default function LinksPage() {
   const { data: session } = useSession();
   const uid = session?.user?.id;
+  const userRole = (session?.user as { role?: string })?.role;
 
   // Category 数据
   const { data: catData } = useDataCache({
@@ -81,27 +82,39 @@ export default function LinksPage() {
     },
   ], userId: uid });
 
-  // Link 数据 — 无限滚动加载
+  // Link 数据 — 与首页共用同一套数据源（name/pageSize/fetch 一致 → 同一缓存、同一版本号）：
+  // 首页全部页、分类页、后台管理页共享一份 Link 数据，任何页面修改后广播 + 版本号同步。
+  // 数据范围 = home 可见性（自己的全部含私有 + 他人公开），普通用户在渲染层过滤出"仅自己的"。
   const {
     items: links,
-    total,
-    hasMore,
     isLoadingMore,
     loading: linksLoading,
     sentinelRef,
     setItems: setData,
   } = useInfiniteScroll<LinkType>({
-    name: "Link:mgmt:v2",
+    name: "Link",
     versionTable: "Link",
-    autoPageSize: true,
     userId: uid,
+    pageSize: 1000,
     fetchFn: (page, pageSize) =>
-      fetch(`/api/links?includePrivate=true&page=${page}&pageSize=${pageSize}&scope=manage`)
+      fetch(`/api/links?page=${page}&pageSize=${pageSize}&sort=recent`)
         .then((r) => r.json())
         .then((d: { data: LinkType[]; total: number }) => ({ data: d.data, total: d.total })),
   });
 
   const categories = (catData["Category:mgmt:v2"] || []) as Category[];
+
+  // 可编辑边界（与服务端 PUT/DELETE /api/links/[id] 权限一致）：
+  // - 自己的链接（公开/私有）均可编辑
+  // - 管理员额外可编辑所有公开链接（数据源已保证他人公开链接的分类必公开）
+  // 表格展示为 home 可读范围（所有用户公开链接 + 自己的全部含私有），仅操作按此边界控制。
+  const canEditLink = useCallback(
+    (link: LinkType) => {
+      if (link.userId === uid) return true;
+      return userRole === "admin" && !link.isPrivate;
+    },
+    [uid, userRole]
+  );
 
   // 从链接中提取去重创建人列表
   const uniqueCreators = useMemo(() => {
@@ -481,18 +494,21 @@ export default function LinksPage() {
     }
   };
 
-  // 批量勾选：全选/取消全选
+  // 批量勾选：全选/取消全选（仅全选可编辑的链接）
   const toggleSelectAll = () => {
-    if (selectedIds.size === filteredLinks.length && filteredLinks.length > 0) {
+    const selectable = filteredLinks.filter(canEditLink);
+    if (selectedIds.size === selectable.length && selectable.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredLinks.map((l) => l.id)));
+      setSelectedIds(new Set(selectable.map((l) => l.id)));
     }
   };
 
-  // 批量勾选：单行切换
+  // 批量勾选：单行切换（不可编辑的链接不允许勾选）
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
+      const link = links.find((l) => l.id === id);
+      if (link && !canEditLink(link)) return prev;
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -508,7 +524,17 @@ export default function LinksPage() {
     if (!batchDialogMoveTargetId || selectedIds.size === 0) return;
     setIsBatchMoving(true);
     const targetId = batchDialogMoveTargetId;
-    const ids = Array.from(selectedIds);
+    // 防御：仅操作可编辑的链接（勾选已限制，双保险）
+    const ids = Array.from(selectedIds).filter((id) => {
+      const l = links.find((x) => x.id === id);
+      return l ? canEditLink(l) : false;
+    });
+    if (ids.length === 0) {
+      setIsBatchMoving(false);
+      setBatchDialog(null);
+      setBatchDialogMoveTargetId("");
+      return;
+    }
     const prevLinks = [...links];
 
     // 乐观更新
@@ -560,7 +586,16 @@ export default function LinksPage() {
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
     setIsBatchDeleting(true);
-    const ids = Array.from(selectedIds);
+    // 防御：仅操作可编辑的链接（勾选已限制，双保险）
+    const ids = Array.from(selectedIds).filter((id) => {
+      const l = links.find((x) => x.id === id);
+      return l ? canEditLink(l) : false;
+    });
+    if (ids.length === 0) {
+      setIsBatchDeleting(false);
+      setBatchDialog(null);
+      return;
+    }
     const prevLinks = [...links];
 
     // 乐观删除
@@ -772,8 +807,14 @@ export default function LinksPage() {
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
+  // 当前列表中可编辑（可勾选）的数量，用于全选态判定
+  const selectableCount = useMemo(
+    () => filteredLinks.filter(canEditLink).length,
+    [filteredLinks, canEditLink]
+  );
+
   const stats = {
-    totalLinks: total,
+    totalLinks: links.length,
     totalCategories: categories.length,
     publicLinks: links.filter((l) => !l.isPrivate).length,
     privateLinks: links.filter((l) => l.isPrivate).length,
@@ -787,7 +828,7 @@ export default function LinksPage() {
           <div>
             <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-space-grotesk)" }}>链接管理</h1>
             <p className="text-muted-foreground">
-              共 {total} 个链接
+              共 {links.length} 个链接
             </p>
           </div>
 
@@ -1191,12 +1232,13 @@ export default function LinksPage() {
                     <TableHead className="w-10">
                       <Checkbox
                         checked={
-                          selectedIds.size === filteredLinks.length && filteredLinks.length > 0
+                          selectedIds.size === selectableCount && selectableCount > 0
                             ? true
                             : selectedIds.size > 0
                             ? "indeterminate"
                             : false
                         }
+                        disabled={selectableCount === 0}
                         onCheckedChange={toggleSelectAll}
                       />
                     </TableHead>
@@ -1232,6 +1274,7 @@ export default function LinksPage() {
                         <TableCell className="w-10">
                           <Checkbox
                             checked={selectedIds.has(link.id)}
+                            disabled={!canEditLink(link)}
                             onCheckedChange={() => toggleSelect(link.id)}
                           />
                         </TableCell>
@@ -1260,7 +1303,7 @@ export default function LinksPage() {
                             onClick={() => {
                               setLinkCategoryId(linkCategoryId === link.id ? null : link.id);
                             }}
-                            disabled={categoryUpdating[link.id]}
+                            disabled={!canEditLink(link) || categoryUpdating[link.id]}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ring-1 bg-muted text-muted-foreground ring-border hover:bg-accent dark:bg-muted dark:text-muted-foreground dark:ring-border dark:hover:bg-accent"
                           >
                             {categoryUpdating[link.id] ? (
@@ -1271,7 +1314,7 @@ export default function LinksPage() {
                             {link.category?.name || "未分类"}
                             <ChevronDown className="h-3 w-3 opacity-50" />
                           </button>
-                          {linkCategoryId === link.id && (
+                          {linkCategoryId === link.id && canEditLink(link) && (
                             <div
                               ref={linkCategoryMenuRef}
                               className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg py-1"
@@ -1335,7 +1378,7 @@ export default function LinksPage() {
                             {link.isPrivate ? "私有" : "公开"}
                             <ChevronDown className="h-3 w-3 opacity-50" />
                           </button>
-                          {linkAccessId === link.id && (
+                          {linkAccessId === link.id && canEditLink(link) && (
                             <div
                               ref={linkAccessMenuRef}
                               className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 min-w-[120px] rounded-lg border border-border bg-card shadow-lg py-1"
@@ -1429,14 +1472,18 @@ export default function LinksPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleEditLink(link)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
+                          {canEditLink(link) ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleEditLink(link)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">只读</span>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

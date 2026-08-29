@@ -13,6 +13,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
+import { notifyDataChanged } from "@/lib/cache-client";
 import {
   Table,
   TableBody,
@@ -77,6 +78,9 @@ export default function UsersPage() {
       const data = await res.json();
       if (res.ok) {
         setData("User", (prev) => (prev as UserItem[]).map((u) => (u.id === userId ? { ...u, role: data.role } : u)));
+        // 角色变更影响该用户的链接可见范围 → 广播 User（联动 Link/DashboardStats）让已打开页面刷新
+        notifyDataChanged("User");
+        notifyDataChanged("Link");
         toast.success(`角色已更新为 ${newRole === "admin" ? "管理员" : "普通用户"}`);
       } else {
         // 回滚
@@ -106,6 +110,9 @@ export default function UsersPage() {
       });
       const data = await res.json();
       if (res.ok) {
+        // 删除用户会级联删除其链接 → 双发广播，首页/分类页等已打开页面实时刷新
+        notifyDataChanged("User");
+        notifyDataChanged("Link");
         toast.success("用户已删除");
       } else {
         // 回滚

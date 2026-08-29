@@ -36,6 +36,9 @@ interface TableConfig {
   /** 版本号用的全量表级 key（默认取 name）。
    *  全量版本号：任何数据变更都会递增它，所有页面（不管 name 如何）比对它判断数据是否过期 */
   versionTable?: string;
+  /** 额外订阅的数据变更表（表级 key）：收到这些表的广播时，也校验本表版本号并按需重拉。
+   *  用于联动表——如 DashboardStats 需在 Link/Category/User 变更时刷新统计 */
+  subscribe?: string[];
   /** 拉取该表最新数据的函数，返回 { data, total } */
   fetch: () => Promise<FetchResult>;
 }
@@ -99,14 +102,15 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
 
   // ===== 初始化：缓存优先 + 后台同步 =====
 
+  // 同步逻辑抽为可复用函数：init 与“收到跨页面广播”共用
+  const syncDataRef = useRef<() => Promise<void>>(async () => {});
+
   useEffect(() => {
     let cancelled = false;
 
-    const init = async () => {
+    const readCached = (): Record<string, unknown[]> => {
       const cfgs = configsRef.current;
       const currentUserId = userIdRef.current || null;
-
-      // 优先用 lazy init 时已有的数据，若无缓存再同步读取
       const cached: Record<string, unknown[]> = {};
       for (const { name } of cfgs) {
         const c = readPageCache(name, 1, currentUserId);
@@ -114,53 +118,57 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
           cached[name] = c.data;
         }
       }
-      // 仅当 lazy init 无缓存而 effect 阶段读到缓存时，才更新状态
-      if (Object.keys(cached).length > 0 && !cancelled) {
-        setAllData((prev) => {
-          // 如果 lazy init 已读取了同一份数据（引用相同），跳过更新
-          const hasNew = Object.keys(cached).some((key) => !(key in prev) || prev[key] !== cached[key]);
-          return hasNew ? cached : prev;
-        });
-        setLoading(false);
-      }
+      return cached;
+    };
 
-      // 2. 后台并行比对版本号，按需拉取
+    /** 后台比对版本号，按需拉取（init 与广播重拉共用） */
+    const syncData = async () => {
+      const cfgs = configsRef.current;
+      const currentUserId = userIdRef.current || null;
+
       setSyncing(true);
       try {
         const results = await Promise.all(
           cfgs.map(async ({ name, versionTable, fetch: fetchFn }) => {
-            if (cancelled) return { name, data: cached[name] || [] };
+            if (cancelled) return { name, data: [] as unknown[] };
 
             // 用全量表级版本号判断数据是否过期（name 只用于缓存/页面隔离）
             const versionKey = versionTable || name;
+            // 本地版本号按「视图」隔离（表级版本号 + 视图名），与 useInfiniteScroll 保持一致：
+            // 若共享同一个本地版本号，首页（name="Category"）重拉后 setLocalVersion 会把版本同步到最新，
+            // 分类管理页（name="Category:mgmt:v2"）会误以为自己的缓存也是最新的而跳过重拉 → 读到旧缓存/空数据。
+            const localVersionKey = `${versionKey}__view__${name}`;
             const serverVer = await getServerVersion(versionKey);
-            const localVer = getLocalVersion(versionKey, currentUserId);
+            const localVer = getLocalVersion(localVersionKey, currentUserId);
 
-            // 版本一致 → 用缓存
+            // 版本一致 → 用缓存。但缓存为空时不能直接信任（可能是历史瞬时错误写入的空缓存），
+            // 继续走下方重新拉取逻辑，确保拿到真实数据（与 useInfiniteScroll 一致）。
             if (localVer && localVer === serverVer) {
               const c = readPageCache(name, 1, currentUserId);
-              return { name, data: c?.data || cached[name] || [] };
+              if (c && c.data.length > 0) {
+                return { name, data: c.data };
+              }
             }
 
             // 版本不一致 / 无本地版本 → 重新拉取
             try {
               const result = await fetchFn();
-              if (cancelled) return { name, data: cached[name] || [] };
+              if (cancelled) return { name, data: [] as unknown[] };
 
               // ✅ 验证返回数据：防止 malformed response（如 401 返回 { error: "..." }）
               if (!Array.isArray(result?.data)) {
                 console.warn(`[useDataCache] ${name} fetch 返回格式异常，回退缓存`);
                 const c = readPageCache(name, 1, currentUserId);
-                return { name, data: c?.data || cached[name] || [] };
+                return { name, data: c?.data || [] };
               }
 
               writePageCache(name, 1, result.data, result.total, serverVer || 1, currentUserId);
-              setLocalVersion(versionKey, serverVer || 1, currentUserId);
+              setLocalVersion(localVersionKey, serverVer || 1, currentUserId);
               return { name, data: result.data };
             } catch {
               // 拉取失败，回退到缓存
               const c = readPageCache(name, 1, currentUserId);
-              return { name, data: c?.data || cached[name] || [] };
+              return { name, data: c?.data || [] };
             }
           })
         );
@@ -186,6 +194,24 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
         }
       }
     };
+    syncDataRef.current = syncData;
+
+    const init = async () => {
+      // 优先用 lazy init 时已有的数据，若无缓存再同步读取
+      const cached = readCached();
+      // 仅当 lazy init 无缓存而 effect 阶段读到缓存时，才更新状态
+      if (Object.keys(cached).length > 0 && !cancelled) {
+        setAllData((prev) => {
+          // 如果 lazy init 已读取了同一份数据（引用相同），跳过更新
+          const hasNew = Object.keys(cached).some((key) => !(key in prev) || prev[key] !== cached[key]);
+          return hasNew ? cached : prev;
+        });
+        setLoading(false);
+      }
+
+      // 2. 后台比对版本号，按需拉取
+      await syncData();
+    };
 
     init();
     return () => {
@@ -193,26 +219,41 @@ export function useDataCache(options: UseDataCacheOptions): UseDataCacheReturn {
     };
   }, [uid]); // userId 变化时重新初始化缓存
 
-  // ===== 跨页面实时同步：订阅同表数据变更广播，触发重新拉取 =====
+  // ===== 跨页面实时同步：订阅同表数据变更广播，版本不一致时真正重拉 =====
 
   useEffect(() => {
     const onTableChanged = async (table: string) => {
       const cfgs = configsRef.current;
       const currentUserId = userIdRef.current || null;
-      // 广播的 table 是表级全量 key（如 Link / Category），匹配所有 versionTable 相同或 name 相同的表
-      const cfg = cfgs.find((c) => (c.versionTable || c.name) === table || c.name === table);
-      if (!cfg) return; // 本 hook 不关心该表
-      const versionKey = cfg.versionTable || cfg.name;
+      // 广播的 table 是表级全量 key（如 Link / Category）：
+      // 匹配 versionTable/name 相同，或显式 subscribe 声明的联动表
+      const matched = cfgs.filter(
+        (c) =>
+          (c.versionTable || c.name) === table ||
+          c.name === table ||
+          c.subscribe?.includes(table)
+      );
+      if (matched.length === 0) return; // 本 hook 不关心该表
 
-      const serverVer = await getServerVersion(versionKey);
-      const localVer = getLocalVersion(versionKey, currentUserId);
-      if (!serverVer || serverVer === localVer) return; // 版本未变
-      // 收到数据变更广播：不做任何本地写入。
-      // 关键原因：writePageCache 内部会 setLocalVersion，会把本地版本同步成最新，
-      // 导致刷新时“版本一致”而读到旧缓存。保持本地版本为旧值，刷新时重新拉取最新数据。
+      // 任一匹配表服务端版本已变化才真正重拉（写方自身未同步本地版本，会命中"不一致"触发）
+      let needsSync = false;
+      for (const cfg of matched) {
+        const versionKey = cfg.versionTable || cfg.name;
+        // 版本比对使用按视图隔离的本地版本号（避免与其他视图共享同一版本号导致误判）
+        const localVersionKey = `${versionKey}__view__${cfg.name}`;
+        const serverVer = await getServerVersion(versionKey);
+        const localVer = getLocalVersion(localVersionKey, currentUserId);
+        if (serverVer && serverVer !== localVer) {
+          needsSync = true;
+          break;
+        }
+      }
+      if (!needsSync) return;
+      // 版本不一致 → 重新拉取（syncData 拉取后统一写入本地版本）
+      await syncDataRef.current();
     };
     return subscribeDataChanged(onTableChanged);
-  }, []); // 依赖 configsRef/userIdRef（均为 ref，稳定）
+  }, []); // 依赖 configsRef/userIdRef/syncDataRef（均为 ref，稳定）
 
   // ===== 手动更新数据（乐观 CRUD）=====
 

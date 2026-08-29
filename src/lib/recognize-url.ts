@@ -42,6 +42,7 @@ function resolveUrl(href: string, base: URL): string {
  * 直接拼接 faviconsnap 图片接口 URL 作为 favicon 中转地址。
  * faviconsnap 会自行判断站点、转中图片并带缓存，前端可直接作为 <img> src，
  * 无需再经过本地 /api/favicon 代理，也无需额外请求确认。
+ * size=64：卡片展示 40px，64 保证高分屏清晰（API 支持 16/32/64/128）。
  */
 function buildFaviconProxyUrl(url: string): string {
   // 只保留站点域名（去掉路径/查询/hash），faviconsnap 按域名识别站点图标最准确
@@ -51,7 +52,7 @@ function buildFaviconProxyUrl(url: string): string {
   } catch {
     // URL 解析失败则原样使用
   }
-  return `https://faviconsnap.com/api/favicon?url=${root}`;
+  return `https://faviconsnap.com/api/favicon?url=${root}&size=64`;
 }
 
 /**

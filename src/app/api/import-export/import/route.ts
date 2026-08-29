@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { invalidateAll, incrementTableVersion } from "@/lib/queries";
+import { incrementTableVersion } from "@/lib/queries";
 import { recognizeUrl, cleanUrl } from "@/lib/recognize-url";
 import { z } from "zod";
 
@@ -214,8 +214,9 @@ export async function POST(request: Request) {
       });
     }
 
+    // 用户内全局编号，与创建接口/拖拽重排的编号体系一致
     const maxSortOrder = await prisma.link.aggregate({
-      where: { categoryId: targetCategoryId, userId: session.user.id },
+      where: { userId: session.user.id },
       _max: { sortOrder: true },
     });
 
@@ -230,10 +231,9 @@ export async function POST(request: Request) {
       })),
     });
 
-    // 导入完成后清除所有缓存
-    invalidateAll();
-    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
-    incrementTableVersion("Link").catch((e) => console.warn("[version] Link递增失败:", e));
+    // 版本号在响应返回前递增完成：全实例缓存随版本键一起失效
+    await incrementTableVersion("Category");
+    await incrementTableVersion("Link");
 
     // 异步抓取元数据（标题、描述、favicon），不阻塞响应
     fetchMetadataForImported(session.user.id, targetCategoryId!, createdLinks.count)

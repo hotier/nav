@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createCategorySchema } from "@/lib/validators";
 import { generateSlug } from "@/lib/slug";
 import { swr } from "@/lib/cache";
-import { invalidateCategories, incrementTableVersion } from "@/lib/queries";
+import { getTableVersion, incrementTableVersion } from "@/lib/queries";
 import { buildLinkWhere, buildCategoryWhere, type LinkViewScope } from "@/lib/permissions";
 import { categoryKey } from "@/lib/cache-keys";
 
@@ -25,8 +25,9 @@ export async function GET(request: Request) {
     // 根据 scope 生成链接子查询的 where 条件
     const linkWhere = buildLinkWhere(scope, userId, userRole);
 
-    // 使用 SWR 缓存，按用户 + scope 区分缓存键（结构化）
-    const cacheKey = categoryKey(userId, scope);
+    // 版本化缓存键：版本号编进键，分类写操作递增版本后全实例天然失效
+    const version = await getTableVersion("Category");
+    const cacheKey = categoryKey(version, userId, scope);
     const categories = await swr(cacheKey, () =>
       prisma.category.findMany({
         where: {
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
           },
           links: {
             where: linkWhere,
-            orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }],
+            orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
           },
         },
         orderBy: { sortOrder: "asc" },
@@ -107,9 +108,8 @@ export async function POST(request: Request) {
       },
     });
 
-    // 清除缓存，下次请求从数据库拉取最新数据
-    invalidateCategories(session.user.id);
-    incrementTableVersion("Category").catch((e) => console.warn("[version] Category递增失败:", e));
+    // 版本号在响应返回前递增完成（联动递增 Link 版本，分类可见性变更会影响链接）
+    await incrementTableVersion("Category");
 
     return NextResponse.json(category, { status: 201 });
   } catch (error) {
