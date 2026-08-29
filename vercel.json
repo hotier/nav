@@ -1,13 +1,13 @@
 {
   "installCommand": "pnpm install --registry=https://registry.npmjs.org",
   "functions": {
-    "api/links/route.ts": {
+    "src/app/api/links/route.ts": {
       "includeFiles": "node_modules/@img/**/*"
     },
-    "api/links/[id]/route.ts": {
+    "src/app/api/links/[id]/route.ts": {
       "includeFiles": "node_modules/@img/**/*"
     },
-    "api/favicon/route.ts": {
+    "src/app/api/favicon/route.ts": {
       "includeFiles": "node_modules/@img/**/*"
     }
   }
