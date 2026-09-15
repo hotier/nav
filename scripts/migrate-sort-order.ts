@@ -11,9 +11,16 @@
  *
  * 运行：npx ts-node --compiler-options {"module":"CommonJS"} scripts/migrate-sort-order.ts
  */
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+// Rust-free Prisma（schema 中 engineType = "client"）必须显式提供 driver adapter
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString:
+      process.env.DATABASE_URL || "postgresql://localhost:5432/placeholder",
+  }),
+});
 
 async function main() {
   const users = await prisma.user.findMany({ select: { id: true, name: true } });

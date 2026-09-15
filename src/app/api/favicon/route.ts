@@ -1,6 +1,5 @@
 import { ICON_CACHE_PREFIX, getRedis } from "@/lib/redis";
 import { isImageMagicBytes, guessImageContentType } from "@/lib/image-magic";
-import sharp from "sharp";
 
 /**
  * 服务端图片代理 — 统一通过服务端请求外部图片（图标、头像等）
@@ -10,9 +9,9 @@ import sharp from "sharp";
  * - 伪装完整浏览器头（UA + Referer 指向目标站自身 + Accept），降低防盗链拒绝率
  * - 内容判定：content-type 优先，其次魔数；SVG 因常见 text/xml / 注释头等形态需宽松匹配
  * - 失败不静默：console.warn 记录目标与原因，便于诊断"URL 明明能访问却显示默认图标"
- * - size（可选）：头像等场景传入目标最长边像素（8~1024），用 sharp 等比缩小（只缩不放），
- *   降低传输体积与客户端解码开销；仅对静态栅格图 PNG/JPEG/WebP 生效，
- *   GIF 动图 / SVG 矢量 / ICO 多尺寸容器原样透传。缩小失败自动回退原图。
+ * - size（可选，仅保留兼容）：早期用于把头像等比缩小到显示尺寸，依赖 sharp。
+ *   sharp 会带入 19MB 的 libvips 原生库，实测占 API 函数包的 98%，已移除；
+ *   现统一原样透传（图标/头像多在 100KB 内，不值得为此背上原生库）。
  *
  * 缓存：启用 Redis 时按「完整 URL + size」缓存图片字节（头像/图标同域名不同内容，不能按域名键），
  * TTL 7 天；超过 400KB 的图片不缓存（Upstash REST 单请求上限 1MB，base64 膨胀需留余量）。
@@ -100,18 +99,8 @@ export async function GET(request: Request) {
       ? contentType
       : guessImageContentType(new Uint8Array(buffer)) || (contentType.includes("svg") ? "image/svg+xml" : "image/png");
 
-    // 可选：按 size 等比缩小（仅静态栅格图 PNG/JPEG/WebP；GIF 动图/SVG 矢量/ICO 原样透传）
-    let outBuffer: Buffer | ArrayBuffer = buffer;
-    if (size && isResizableRaster(finalContentType)) {
-      try {
-        outBuffer = await sharp(buffer)
-          .resize({ width: size, height: size, fit: "inside", withoutEnlargement: true })
-          .toBuffer();
-      } catch (err) {
-        console.warn(`[favicon] 图片缩放失败，回退原图: ${url}`, (err as Error).message);
-        outBuffer = buffer;
-      }
-    }
+    // 原样透传：不再做服务端缩放（原因见文件头注释，size 参数仅保留兼容）
+    const outBuffer: Buffer | ArrayBuffer = buffer;
 
     // 图片字节写入 Redis 缓存（≤400KB 才缓存：base64 膨胀 + JSON 包裹后需在 Upstash 1MB 限制内）
     if (client && outBuffer.byteLength < 400 * 1024) {
@@ -140,7 +129,3 @@ export async function GET(request: Request) {
   }
 }
 
-/** 是否可用 sharp 等比缩小的静态栅格图（动图/矢量/多尺寸容器不做处理） */
-function isResizableRaster(ct: string): boolean {
-  return ct === "image/png" || ct === "image/jpeg" || ct === "image/webp";
-}

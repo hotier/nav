@@ -1,5 +1,4 @@
-import sharp from "sharp";
-import { isImageMagicBytes } from "@/lib/image-magic";
+import { isImageMagicBytes, readImageSize } from "@/lib/image-magic";
 
 export type FaviconRejectReason = "not-found" | "not-image" | "too-small";
 
@@ -59,17 +58,12 @@ export async function probeImageUrl(
     return { ok: true };
   }
 
-  // 栅格图：用 sharp 解码读取真实尺寸，过滤 1×1 等占位图
-  try {
-    const meta = await sharp(buffer, { failOn: "none" }).metadata();
-    const w = meta.width ?? 0;
-    const h = meta.height ?? 0;
-    if (w > 0 && h > 0 && (w < minSize || h < minSize)) {
-      return { ok: false, reason: "too-small" };
-    }
-  } catch {
-    // sharp 无法解码的格式（如部分 ICO/GIF 变体）：跳过尺寸判断，放行
+  // 栅格图：从文件头解析真实尺寸，过滤 1×1 等占位图（纯字节解析，不依赖原生库）
+  const dim = readImageSize(buffer);
+  if (dim && dim.width > 0 && dim.height > 0 && (dim.width < minSize || dim.height < minSize)) {
+    return { ok: false, reason: "too-small" };
   }
+  // 无法解析出尺寸的格式（如部分 ICO / BMP 变体）：跳过尺寸判断，放行
 
   return { ok: true };
 }

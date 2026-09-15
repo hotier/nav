@@ -12,11 +12,18 @@
  *   - 重置后自动递增 tokenVersion，该用户所有已登录设备将强制下线
  *   - 与 account/route.ts 保持一致，使用 bcrypt 12 轮哈希
  */
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
-const prisma = new PrismaClient();
+// Rust-free Prisma（schema 中 engineType = "client"）必须显式提供 driver adapter
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString:
+      process.env.DATABASE_URL || "postgresql://localhost:5432/placeholder",
+  }),
+});
 
 function generatePassword(length = 10): string {
   const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";

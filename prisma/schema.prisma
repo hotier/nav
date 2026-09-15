@@ -1,5 +1,9 @@
 generator client {
   provider = "prisma-client-js"
+  // 使用 Prisma ORM 的 Rust-free 版本：不下载/打包 query engine 二进制，
+  // query engine 由 JS 客户端实现 + driver adapter（@prisma/adapter-pg）驱动。
+  // 这能去掉约 20MB 的原生二进制，显著减小 Serverless 函数体积。
+  engineType = "client"
 }
 
 datasource db {

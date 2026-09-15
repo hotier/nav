@@ -1,5 +1,4 @@
 import axios from "axios";
-import * as cheerio from "cheerio";
 import { RECOG_CACHE_PREFIX, getRedis } from "@/lib/redis";
 
 interface RecognizedMeta {
@@ -30,13 +29,60 @@ export function cleanUrl(raw: string): string {
   return url;
 }
 
-// 补全相对路径为绝对 URL
-function resolveUrl(href: string, base: URL): string {
-  if (!href) return "";
-  if (/^https?:\/\//i.test(href)) return href;         // 已是绝对 URL
-  if (href.startsWith("//")) return base.protocol + href; // 协议相对
-  if (href.startsWith("/")) return base.origin + href;   // 绝对路径
-  return base.origin + "/" + href;                       // 相对路径
+/** 解码常见 HTML 实体（含十进制 / 十六进制数字实体）。 */
+function decodeEntities(input: string): string {
+  return input
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, dec) => fromCodePoint(Number(dec)))
+    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, hex) => fromCodePoint(parseInt(hex, 16)));
+}
+
+function fromCodePoint(code: number): string {
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return "";
+  }
+}
+
+/** 取 <head> 片段；无 head 标签时回退全文前 200KB，避免正文/脚本干扰。 */
+function extractHead(html: string): string {
+  const m = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
+  return m ? m[1] : html.slice(0, 200_000);
+}
+
+/** 取 <title> 文本。 */
+function extractTitle(head: string): string {
+  const m = head.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  return m ? decodeEntities(m[1]).replace(/\s+/g, " ").trim() : "";
+}
+
+/**
+ * 按 name / property 取 <meta> 的 content。
+ * 逐个 <meta> 标签匹配，因此 content 写在 name/property 前后都能正确识别。
+ */
+function extractMetaContent(
+  head: string,
+  attr: "name" | "property",
+  key: string
+): string {
+  const tagRe = /<meta\b[^>]*>/gi;
+  const attrRe = new RegExp(`\\b${attr}\\s*=\\s*["']?([^"'\\s>]+)["']?`, "i");
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(head))) {
+    const attrMatch = m[0].match(attrRe);
+    if (!attrMatch || attrMatch[1].toLowerCase() !== key.toLowerCase()) continue;
+    const contentMatch = m[0].match(/\bcontent\s*=\s*["']([^"']*)["']/i);
+    if (contentMatch) {
+      return decodeEntities(contentMatch[1]).replace(/\s+/g, " ").trim();
+    }
+  }
+  return "";
 }
 
 /**
@@ -57,8 +103,12 @@ function buildFaviconProxyUrl(url: string): string {
 }
 
 /**
- * 从目标 URL 的 HTML 中解析标题、描述、favicon。
+ * 从目标 URL 的 HTML 中解析标题、描述；favicon 由 faviconsnap 中转生成。
  * 失败时返回空对象（不抛异常）。
+ *
+ * 说明：这里刻意不使用 cheerio。cheerio 会连带引入 iconv-lite（GBK/Big5/
+ * Shift_JIS 等编码表）与 whatwg-encoding，实测给 Serverless 页面包增加约
+ * 0.9MB；而本函数只需要取 title 与 description 两个字符串，正则即可等价实现。
  */
 export async function recognizeUrl(url: string): Promise<RecognizedMeta> {
   const cleanedUrl = cleanUrl(url);
@@ -82,8 +132,7 @@ export async function recognizeUrl(url: string): Promise<RecognizedMeta> {
     }
   }
 
-  // HTML 抓取与 faviconsnap 并行执行，避免串行导致识别超时。
-  // favicon 以 faviconsnap 引擎为首要方式；HTML 提取作为降级。
+  // 抓取 HTML 解析标题/描述（favicon 由 faviconsnap 生成，无需从 HTML 提取）。
   const htmlPromise = (async () => {
     try {
       const { data: html } = await axios.get<string>(cleanedUrl, {
@@ -100,52 +149,35 @@ export async function recognizeUrl(url: string): Promise<RecognizedMeta> {
         maxRedirects: 5,
       });
 
-      const $ = cheerio.load(html);
+      const head = extractHead(html);
 
       const title =
-        $("title").first().text().trim() ||
-        $('meta[property="og:title"]').attr("content")?.trim() ||
+        extractTitle(head) ||
+        extractMetaContent(head, "property", "og:title") ||
         "";
 
       const description =
-        $('meta[property="og:description"]').attr("content")?.trim() ||
-        $('meta[name="description"]').attr("content")?.trim() ||
+        extractMetaContent(head, "property", "og:description") ||
+        extractMetaContent(head, "name", "description") ||
         "";
 
-      let favicon =
-        $('link[rel="apple-touch-icon"]').attr("href")?.trim() ||
-        $('link[rel="apple-touch-icon-precomposed"]').attr("href")?.trim() ||
-        $('meta[property="og:image"]').attr("content")?.trim() ||
-        "";
-
-      if (!favicon) {
-        $("link[rel]").each((_, el) => {
-          const rel = ($(el).attr("rel") || "").toLowerCase();
-          if (rel.includes("icon") && !favicon) {
-            favicon = $(el).attr("href")?.trim() || "";
-          }
-        });
-      }
-
-      if (favicon) favicon = resolveUrl(favicon, parsedUrl);
-
-      return { title, description, favicon };
+      return { title, description };
     } catch {
       // 抓取失败
-      return { title: "", description: "", favicon: "" };
+      return { title: "", description: "" };
     }
   })();
 
   // 整体硬超时：即使外部站点极慢，识别也不会无限等待，保证接口及时响应
   const htmlResult = await Promise.race([
     htmlPromise,
-    new Promise<{ title: string; description: string; favicon: string }>((_, reject) =>
+    new Promise<{ title: string; description: string }>((_, reject) =>
       setTimeout(() => reject(new Error("识别超时")), 12000)
     ),
-  ]).catch(() => ({ title: "", description: "", favicon: "" }));
+  ]).catch(() => ({ title: "", description: "" }));
 
-  // favicon 优先使用 faviconsnap 中转 URL（faviconsnap 负责判断站点、转中图片 + 缓存），
-  // 仅 HTML 抓取不到时降级用 faviconsnap 中转（faviconsnap 对绝大多数站点都有兜底）
+  // favicon 统一使用 faviconsnap 中转 URL（faviconsnap 负责识别站点、转中图 + 缓存），
+  // 前端可直接作为 <img> src，无需再经过本地 /api/favicon 代理
   const favicon = buildFaviconProxyUrl(cleanedUrl);
 
   const result: RecognizedMeta = {

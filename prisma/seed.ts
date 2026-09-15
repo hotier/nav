@@ -1,10 +1,18 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
-const prisma = new PrismaClient();
+// Rust-free Prisma（schema 中 engineType = "client"）必须显式提供 driver adapter，
+// 否则实例化会失败。DATABASE_URL 的缺失由下方 checkDatabase() 负责报错退出。
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString:
+      process.env.DATABASE_URL || "postgresql://localhost:5432/placeholder",
+  }),
+});
 
 function generateSlug(length = 8): string {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
