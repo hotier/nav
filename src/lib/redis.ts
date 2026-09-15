@@ -16,7 +16,7 @@ import { Redis } from "@upstash/redis";
 export const CACHE_KEY_PREFIX = "nav:cache:";
 /** 限流计数键前缀 */
 export const RATE_LIMIT_KEY_PREFIX = "nav:rl:";
-/** URL 识别结果缓存前缀（按域名，跨用户共享） */
+/** URL 识别结果缓存前缀（按规范化后的完整 URL，跨用户共享） */
 export const RECOG_CACHE_PREFIX = "nav:recog:";
 /** favicon 图片字节缓存前缀（按域名，二进制 base64） */
 export const ICON_CACHE_PREFIX = "nav:icon:";
