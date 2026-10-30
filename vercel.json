@@ -1,3 +1,4 @@
 {
-  "installCommand": "pnpm install --registry=https://registry.npmjs.org"
+  "installCommand": "pnpm install --registry=https://registry.npmjs.org",
+  "ignoreCommand": "bash ./scripts/vercel-ignore.sh"
 }
