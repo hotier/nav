@@ -5,9 +5,9 @@ node_modules
 # Testing
 coverage
 
-# Next.js
-.next/
-out/
+# Nuxt / Nitro
+.nuxt/
+.output/
 
 # Production
 build
@@ -22,9 +22,9 @@ yarn-debug.log*
 yarn-error.log*
 dev.log
 
-# Local env files
+# Local env files（.env.example 是唯一入库的模板）
 .env
-.env*.local
+.env.*
 !.env.example
 
 # Vercel
@@ -32,9 +32,3 @@ dev.log
 
 # TypeScript
 *.tsbuildinfo
-next-env.d.ts
-
-# Prisma
-prisma/*.db
-prisma/*.db-journal
-.env*
