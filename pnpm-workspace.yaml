@@ -1,6 +1,11 @@
 allowBuilds:
-  '@prisma/client': false
-  '@prisma/engines': false
-  prisma: false
+  '@prisma/client': set this to true or false
+  '@prisma/engines': set this to true or false
+  esbuild: true
+  prisma: set this to true or false
   sharp: false
-  unrs-resolver: false
+  unrs-resolver: true
+  vue-demi: true
+minimumReleaseAgeExclude:
+  - '@vue/language-core@3.3.14'
+  - vue-tsc@3.3.14
