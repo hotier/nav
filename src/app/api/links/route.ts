@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createLinkSchema } from "@/lib/validators";
 import { incrementTableVersion, getTableVersion } from "@/lib/queries";
 import { swr } from "@/lib/cache";
 import { buildLinkWhere, canAddLinkToCategory, type LinkViewScope } from "@/lib/permissions";
-import { cleanUrl } from "@/lib/recognize-url";
+import { cleanUrl, linkUrlKey } from "@/lib/recognize-url";
 import { probeImageUrl } from "@/lib/probe-image";
 import { linkListKey } from "@/lib/cache-keys";
 
@@ -113,12 +114,13 @@ export async function POST(request: Request) {
     const permCheck = canAddLinkToCategory(session, category);
     if (permCheck) return permCheck;
 
-    // 同一用户内 URL 不得重复
+    const userId = session.user.id;
+    const urlKey = linkUrlKey(result.data.url);
+
+    // 先查一次给出友好提示；并发下的兜底是 DB 唯一约束（userId + urlKey）
     const urlConflict = await prisma.link.findFirst({
-      where: {
-        userId: session.user.id,
-        url: { equals: result.data.url, mode: "insensitive" },
-      },
+      where: { userId, urlKey },
+      select: { id: true },
     });
     if (urlConflict) {
       return NextResponse.json(
@@ -127,28 +129,33 @@ export async function POST(request: Request) {
       );
     }
 
-    // 用户内全局编号（2026-08-29 方案 A：与拖拽重排的全局编号体系统一，
-    // 避免“分类内 max+1”与全局编号混用导致新建链接插到列表中间）
-    const maxSortOrder = await prisma.link.aggregate({
-      where: {
-        userId: session.user.id,
-      },
-      _max: { sortOrder: true },
-    });
+    // 数据写入 + 版本号递增同事务：避免「数据已提交、版本未翻页」的读窗口
+    const link = await prisma.$transaction(async (tx) => {
+      // 用户内全局编号（2026-08-29 方案 A：与拖拽重排的全局编号体系统一，
+      // 避免“分类内 max+1”与全局编号混用导致新建链接插到列表中间）
+      const maxSortOrder = await tx.link.aggregate({
+        where: { userId },
+        _max: { sortOrder: true },
+      });
 
-    const link = await prisma.link.create({
-      data: {
-        ...result.data,
-        sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
-        userId: session.user.id,
-      },
-    });
+      const created = await tx.link.create({
+        data: {
+          ...result.data,
+          urlKey,
+          sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
+          userId,
+        },
+      });
 
-    // 版本号在响应返回前递增完成（await）：客户端重拉时任何实例都会用新键查到新数据
-    await incrementTableVersion("Link");
+      await incrementTableVersion("Link", tx);
+      return created;
+    });
 
     return NextResponse.json(link, { status: 201 });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ error: "该链接已存在" }, { status: 409 });
+    }
     console.error("Failed to create link:", error);
     return NextResponse.json(
       { error: "创建链接失败" },

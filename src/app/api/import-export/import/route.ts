@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { incrementTableVersion } from "@/lib/queries";
-import { recognizeUrl, cleanUrl } from "@/lib/recognize-url";
+import { recognizeUrl, cleanUrl, linkUrlKey } from "@/lib/recognize-url";
 import { z } from "zod";
 
 const importSchema = z.object({
@@ -206,13 +207,17 @@ export async function POST(request: Request) {
 
     const existingLinks = await prisma.link.findMany({
       where: { userId: session.user.id },
-      select: { url: true },
+      select: { urlKey: true },
     });
-    const existingUrls = new Set(existingLinks.map((l) => l.url.toLowerCase()));
+    // 库内已存在 + 本次导入文件内部重复都要去掉，否则 createMany 会撞唯一约束
+    const seenUrlKeys = new Set(existingLinks.map((l) => l.urlKey));
 
-    const newLinks = links.filter(
-      (link) => !existingUrls.has(link.url.toLowerCase())
-    );
+    const newLinks = links.flatMap((link) => {
+      const urlKey = linkUrlKey(link.url);
+      if (!urlKey || seenUrlKeys.has(urlKey)) return [];
+      seenUrlKeys.add(urlKey);
+      return [{ ...link, urlKey }];
+    });
 
     if (newLinks.length === 0) {
       return NextResponse.json({
@@ -222,26 +227,29 @@ export async function POST(request: Request) {
       });
     }
 
-    // 用户内全局编号，与创建接口/拖拽重排的编号体系一致
-    const maxSortOrder = await prisma.link.aggregate({
-      where: { userId: session.user.id },
-      _max: { sortOrder: true },
-    });
+    // 数据写入 + 版本号递增同事务：用户内全局编号与创建接口/拖拽重排体系一致
+    const createdLinks = await prisma.$transaction(async (tx) => {
+      const maxSortOrder = await tx.link.aggregate({
+        where: { userId: session.user.id },
+        _max: { sortOrder: true },
+      });
 
-    const createdLinks = await prisma.link.createMany({
-      data: newLinks.map((link, index) => ({
-        title: link.title,
-        url: cleanUrl(link.url),
-        description: link.description,
-        categoryId: targetCategoryId!,
-        userId: session.user.id,
-        sortOrder: (maxSortOrder._max.sortOrder ?? -1) + index + 1,
-      })),
-    });
+      const created = await tx.link.createMany({
+        data: newLinks.map((link, index) => ({
+          title: link.title,
+          url: cleanUrl(link.url),
+          urlKey: link.urlKey,
+          description: link.description,
+          categoryId: targetCategoryId!,
+          userId: session.user.id,
+          sortOrder: (maxSortOrder._max.sortOrder ?? -1) + index + 1,
+        })),
+      });
 
-    // 版本号在响应返回前递增完成：全实例缓存随版本键一起失效
-    await incrementTableVersion("Category");
-    await incrementTableVersion("Link");
+      await incrementTableVersion("Category", tx);
+      await incrementTableVersion("Link", tx);
+      return created;
+    });
 
     // 异步抓取元数据（标题、描述、favicon），不阻塞响应
     fetchMetadataForImported(session.user.id, targetCategoryId!, createdLinks.count)
@@ -253,6 +261,12 @@ export async function POST(request: Request) {
       message: `成功导入 ${createdLinks.count} 个链接`,
     });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { error: "导入过程中遇到并发写入的重复链接，请重试" },
+        { status: 409 }
+      );
+    }
     console.error("Failed to import:", error);
     return NextResponse.json(
       { error: "导入失败" },

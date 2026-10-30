@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateLinkSchema } from "@/lib/validators";
 import { incrementTableVersion } from "@/lib/queries";
 import { canAddLinkToCategory } from "@/lib/permissions";
-import { cleanUrl } from "@/lib/recognize-url";
+import { cleanUrl, linkUrlKey } from "@/lib/recognize-url";
 import { probeImageUrl } from "@/lib/probe-image";
 
 export async function GET(
@@ -161,16 +162,16 @@ export async function PUT(
       }
     }
 
-    // 更新 URL 时，同一用户内不得与其他链接重复（排除自身）
-    // 对于属主，按属主 userId 查重；对于管理员编辑他人链接，按原属主 userId 查重
+    const data: Prisma.LinkUncheckedUpdateInput = { ...result.data };
     if (result.data.url) {
+      data.urlKey = linkUrlKey(result.data.url);
+
+      // 更新 URL 时，同一用户内不得与其他链接重复（排除自身）
+      // 对于属主，按属主 userId 查重；对于管理员编辑他人链接，按原属主 userId 查重
       const ownerId = existing.userId; // 始终按原属主查重
       const urlConflict = await prisma.link.findFirst({
-        where: {
-          userId: ownerId,
-          url: { equals: result.data.url, mode: "insensitive" },
-          NOT: { id },
-        },
+        where: { userId: ownerId, urlKey: data.urlKey, NOT: { id } },
+        select: { id: true },
       });
       if (urlConflict) {
         return NextResponse.json(
@@ -180,17 +181,22 @@ export async function PUT(
       }
     }
 
-    const link = await prisma.link.update({
-      where: { id },
-      data: result.data,
-      include: { category: { select: { id: true, name: true, icon: true } } },
+    // 数据写入 + 版本号递增同事务：新旧分类的缓存随版本键一起失效
+    const link = await prisma.$transaction(async (tx) => {
+      const updated = await tx.link.update({
+        where: { id },
+        data,
+        include: { category: { select: { id: true, name: true, icon: true } } },
+      });
+      await incrementTableVersion("Link", tx);
+      return updated;
     });
-
-    // 版本号在响应返回前递增完成：新旧分类的缓存随版本键一起失效（含管理员编辑他人链接的场景）
-    await incrementTableVersion("Link");
 
     return NextResponse.json(link);
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ error: "该链接已存在" }, { status: 409 });
+    }
     console.error("Failed to update link:", error);
     return NextResponse.json(
       { error: "更新链接失败" },
@@ -235,11 +241,10 @@ export async function DELETE(
       return NextResponse.json({ error: "该链接已被管理员隐藏，无权删除" }, { status: 403 });
     }
 
-    await prisma.link.delete({
-      where: { id },
+    await prisma.$transaction(async (tx) => {
+      await tx.link.delete({ where: { id } });
+      await incrementTableVersion("Link", tx);
     });
-
-    await incrementTableVersion("Link");
 
     return NextResponse.json({ success: true });
   } catch (error) {

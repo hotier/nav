@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { swr, deleteCached } from "@/lib/cache";
 import { incrementTableVersion } from "@/lib/queries";
 import { deleteUserAuthCache } from "@/lib/user-cache";
 
@@ -14,21 +13,19 @@ export async function GET() {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
-    const user = await swr(`account:${session.user.id}`, () =>
-      prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          username: true,
-          image: true,
-          createdAt: true,
-          _count: { select: { links: true } },
-        },
-      }),
-    60_000
-    );
+    // 单行主键查询，不缓存：账号数据没有版本键，跨实例失效无法保证
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        username: true,
+        image: true,
+        createdAt: true,
+        _count: { select: { links: true } },
+      },
+    });
 
     if (!user) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
@@ -111,29 +108,28 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "没有要更新的内容" }, { status: 400 });
     }
 
-    const updated = await prisma.user.update({
-      where: { id: session.user.id },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        username: true,
-        image: true,
-        createdAt: true,
-      },
+    // 用户信息（名称/头像）变更影响用户列表与链接创建人展示 → 与 User 版本递增同事务（联动 Link/DashboardStats）
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { id: session.user.id },
+        data: updateData,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          username: true,
+          image: true,
+          createdAt: true,
+        },
+      });
+      await incrementTableVersion("User", tx);
+      return result;
     });
-
-    // 清除当前用户缓存，下次 GET 自动从库刷新
-    deleteCached(`account:${session.user.id}`);
 
     // 修改密码会递增 tokenVersion → 清除认证缓存，旧 token 立即失效
     if (updateData.tokenVersion !== undefined) {
       await deleteUserAuthCache(session.user.id);
     }
-
-    // 用户信息（名称/头像）变更影响用户列表与链接创建人展示 → 递增 User 版本（联动 Link/DashboardStats）
-    await incrementTableVersion("User");
 
     return NextResponse.json(updated);
   } catch (error) {

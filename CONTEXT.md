@@ -7,11 +7,12 @@
 
 **部署在 Vercel**（`vercel-build` 脚本确认），DB 为 PostgreSQL（serverless PG）。关键事实：
 
-1. API routes = serverless 函数，**多实例水平扩缩容，实例间内存不共享**。`cache.ts` 的内存 Map 只在 warm 实例内有效；`invalidateByPrefix` 只清写请求命中的那个实例——**失效机制在生产环境根本不工作**
-2. 响应返回后微任务不保证执行（`_scheduleRefresh` 后台刷新是伪功能）
-3. 由此存在 P0 bug 链：写操作 → 其他 warm 实例 30s TTL 内返回旧数据 → 客户端 `setLocalVersion(新版本)` 与旧数据错位对齐 → **永久陈旧直到下次版本变更**
+1. API routes = serverless 函数，**多实例水平扩缩容，实例间内存不共享**。`cache.ts` 的内存 Map 只在 warm 实例内有效，**主动失效在生产环境不可行**
+2. 响应返回后微任务不保证执行——`_scheduleRefresh` 后台刷新已于 2026-10-30 删除（它每次缓存命中都额外触发一次全量查询，是纯 DB 放大）
+3. 因版本号编进缓存键，同一 key 的数据永不变化，**命中直接返回即可，不需要刷新**
 
 架构决策（2026-08-29）：**serverless 上失效不如代数**。采用版本化缓存键方案（见优化方向），删除整个失效子系统。
+架构决策（2026-10-30）：**数据写入与版本号递增必须同一事务**；版本键缓存不做后台刷新；内存后端改为有上限的 LRU。
 
 ## 项目概览
 
@@ -71,8 +72,7 @@ Hook (useDataCache / useInfiniteScroll)
 
 ```
 客户端 setItems 乐观更新（内存 state）
-  → API: 权限校验 → DB 写入
-  → await incrementTableVersion("Link")   // 单条原子 SQL，响应返回前完成
+  → API: 权限校验 → $transaction { DB 写入; incrementTableVersion("Link", tx) }
   → 响应返回 → notifyDataChanged("Link")  // BroadcastChannel + storage 广播
   → 其他页面：版本比对不一致 → useDataCache.syncData() / useInfiniteScroll.refresh() 真正重拉
   → 写方本 tab：广播不回传发送者（BroadcastChannel/storage 天然排除），乐观 UI 保持；
@@ -90,7 +90,8 @@ Hook (useDataCache / useInfiniteScroll)
 ### 关键设计约束（改动前必读）
 
 - **版本号读取（`getTableVersion`）禁止缓存**：它是缓存键的构造依据，缓存它会拿旧键→旧数据
-- **写路径必须 `await incrementTableVersion`**：响应先返回会让客户端拿到旧版本号
+- **写路径必须 `await incrementTableVersion(table, tx)`，且与业务写入同一事务**：分开执行会留下「数据已提交、版本未翻页」的读窗口；响应先返回会让客户端拿到旧版本号
+- **重复 URL 由数据库兜底**：`@@unique([userId, urlKey])`，`urlKey = cleanUrl(url).toLowerCase()`；应用层 `findFirst` 只负责友好提示，并发下捕获 P2002
 - `writePageCache` 内部隐式 `setLocalVersion`——"写缓存即同步版本"的耦合是防御性注释的根源
 - **写方绝不能 sync 自己的本地版本号**（2026-08-29 回归教训）：乐观更新只改内存 state，localStorage 分页缓存仍是旧数据；若对齐版本号，刷新时"版本一致"会信任旧缓存。广播机制天然不回传发送者页面，写方收不到自己的广播
 - 广播回调**不写本地缓存**：防止把本地版本同步成最新导致刷新时读到旧缓存
@@ -110,6 +111,15 @@ Hook (useDataCache / useInfiniteScroll)
 10. ~~编辑链接后客户端 createdAt 倒序重排列表~~ ✅ 已修：`LinksGrid.sortLinks` 与服务端排序一致，仅置顶变化才重排
 11. ~~搜索页拖拽污染全局 sortOrder~~ ✅ 已修：`draggable={false}`，派生视图禁拖
 12. ~~sortOrder 分类内/全局双轨~~ ✅ 已修：统一用户内全局编号 + 迁移脚本（方案 A）
+
+## 2026-10-30 P0 修复与缓存改造
+
+- 写路径全部改为 `$transaction`（创建/编辑/删除链接、重排、分类、用户、导入、注册），版本号随业务写入原子提交
+- `Link` 增加 `urlKey` + `@@unique([userId, urlKey])`（迁移 `20261030000100_link_url_key`，重复数据保留不删除）
+- 删除分类前统计他人在该分类下的链接数，>0 直接 409（原先 `onDelete: Cascade` 会静默删掉其他用户的链接）
+- `cache.ts` 删除后台刷新与主动失效辅助函数；内存后端改为 LRU（上限 200）
+- `/api/account` 去掉无版本键的缓存，改直查
+- **构建不再改库**：`vercel-build` / `deploy` = `prisma generate` + `next build`；schema 走 `prisma migrate deploy`，seed 只在首次部署手工执行
 
 ## 优化方向（2026-08-29 已全部实施，剩低优先级 3 项）
 

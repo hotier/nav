@@ -125,8 +125,8 @@ pnpm install
 cp .env.example .env
 
 # 3. 建表 + 初始化（创建管理员账号）
-pnpm prisma db push
-pnpm prisma db seed
+pnpm db:migrate
+pnpm db:seed
 
 # 4. 启动开发服务器
 pnpm dev
@@ -142,12 +142,13 @@ pnpm dev
 2. 在 Vercel 项目设置 → Environment Variables 中添加至少 `DATABASE_URL`（建议同时填写 `AUTH_SECRET`，更稳妥）
 3. 构建命令自动使用 `vercel-build` 脚本，无需手动配置
 
-Vercel 构建流程：`pnpm install` → `prisma generate` → `prisma db push` → `prisma db seed` → `next build`
+Vercel 构建流程：`pnpm install` → `prisma generate` → `next build`
 
 注意：
 
-- **构建期会执行 `db push` 和 `seed`**，因此 Vercel 的构建环境必须能访问你的数据库（使用公网可达的 PostgreSQL，并确认防火墙/白名单放行 Vercel 构建 IP）。
-- Vercel 构建环境**没有持久磁盘**，seed 生成的 `AUTH_SECRET` 无法依赖 `.env` 文件，而是通过「数据库 `AppSetting` 表」+「编译进 `src/lib/auth-secret.ts`」两条路径保证运行期可用。若日志提示生成新密钥，建议复制到 Vercel 环境变量中固化。
+- **构建期不再改数据库**：`vercel-build` 只生成 Prisma Client 并构建。建表/迁移与 seed 是独立的手工步骤，避免一次构建把生产 schema 或管理员密码改掉。
+- 首次部署前，在本地（或任意能连到该库的机器）执行一次建库流程：新库用 `pnpm db:migrate`，由 `db push` 建出来的存量库先 `pnpm db:baseline` 标记基线，再 `pnpm db:migrate`。随后执行 `pnpm db:seed` 创建管理员。
+- 需要配置 `AUTH_SECRET` 环境变量（`src/lib/auth-secret.ts` 只是本地兜底）。
 - 生产环境建议在 Vercel 上同时配置 `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`（多实例共享缓存与限流）与 `RESEND_API_KEY` / `RESEND_FROM`（忘记密码）。
 
 ### 方式二：自有服务器
@@ -163,14 +164,16 @@ pnpm install
 cp .env.example .env
 # 编辑 .env，填写有效的 DATABASE_URL
 
-# 4. 一键部署（建表 → 初始化 → 构建）
+# 4. 建表 + 初始化 + 构建
+pnpm db:migrate
+pnpm db:seed
 pnpm deploy
 ```
 
 `pnpm deploy` 等价于：
 
 ```
-prisma generate → prisma db push → prisma db seed → next build
+prisma generate → next build
 ```
 
 **启动与守护：**
@@ -194,25 +197,23 @@ pm2 start "pnpm start" --name onenav
 
 **多实例部署：** 若按多副本运行（如 Docker Compose 多个副本、K8s 多 Pod），务必配置 `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`，否则缓存与限流按实例独立，体验与安全均受影响。
 
-**再次部署：** 重复执行 `pnpm deploy` 是幂等的——`db push` 不会丢数据，seed 不会重复创建管理员（已存在则跳过或仅做幂等修正），`AUTH_SECRET` 与管理员密码均从数据库读取，不会变化。
+**再次部署：** 重复执行 `pnpm deploy` 只做构建，幂等且不触碰数据库。schema 变更用 `pnpm db:migrate` 单独推进。
 
 ### 部署流程详解
 
-执行 `pnpm deploy` 或 Vercel 自动部署时，依次执行：
+构建（`pnpm deploy` / Vercel 自动部署）只做两件事：
 
 ```
 1. prisma generate      → 根据 schema.prisma 生成类型安全的 Prisma Client
-2. prisma db push       → 把 schema 同步到数据库（建表，不会丢失数据）
-3. prisma db seed       → 初始化数据：
-   a. checkDatabase()   → 检查 DATABASE_URL 是否配置 + 数据库是否连通
-   b. AUTH_SECRET 解析  → env → 数据库 AppSetting 表 → 自动生成并持久化
-                          （生成时写入 .env + 数据库 + src/lib/auth-secret.ts）
-   c. 创建管理员账号    → username = ADMIN_USERNAME || "admin"
-      - 密码：优先 ADMIN_PASSWORD → 数据库上次保存值 → 随机生成 8 位
-      - 管理员已存在则幂等修正 isSystemAdmin，密码来源变更时更新密码
-        （并递增 tokenVersion，使旧登录态失效）
-   d. 创建默认分类      → 首个分类（slug 自动生成）
-4. next build           → 构建生产版本
+2. next build           → 构建生产版本
+```
+
+数据库变更与初始化是独立命令：
+
+```
+1. prisma migrate deploy → 按 prisma/migrations 顺序应用迁移（不丢数据）
+2. prisma db seed        → 首次初始化（建管理员、默认分类、AUTH_SECRET 兜底）
+   · 仅在首次部署或需要重建管理员时执行；不要把 seed 放进 CI/CD
 ```
 
 ### 首次部署日志示例
@@ -238,8 +239,10 @@ pm2 start "pnpm start" --name onenav
 | 命令 | 说明 |
 |------|------|
 | `pnpm db:studio` | 打开 Prisma Studio 图形化查看/编辑数据 |
-| `pnpm db:push` | 将 schema 同步到数据库（接受数据丢失） |
-| `pnpm db:seed` | 手动执行 seed 初始化脚本 |
+| `pnpm db:migrate` | 应用 `prisma/migrations` 中的迁移 |
+| `pnpm db:baseline` | 存量库（早期 `db push` 建成）首次接管时标记基线，只执行一次 |
+| `pnpm db:push` | 将 schema 强制同步到数据库（仅本地临时库使用，接受数据丢失） |
+| `pnpm db:seed` | 手动执行 seed 初始化脚本（首次部署时一次） |
 | `pnpm lint` / `pnpm lint:fix` | ESLint 检查 / 自动修复 |
 
 **重置用户密码（不依赖邮件服务，两种方式任选）：**

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { incrementTableVersion } from "@/lib/queries";
 import { getClientIp, isRateLimited } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 
@@ -126,20 +127,23 @@ export async function POST(request: Request) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create user（邮箱已验证通过）
-    const user = await prisma.user.create({
-      data: {
-        username: username.toLowerCase(),
-        name: username,
-        email,
-        password: hashedPassword,
-        emailVerified: new Date(),
-      },
-    });
-
     // 不再自动创建默认分类：新用户可直接使用他人的公开分类，
     // 也避免每个新用户都产生同名公开分类导致名称重复
-    // 验证码一次性使用：注册成功后删除
-    await prisma.verificationToken.deleteMany({ where: { identifier: email } });
+    // 建号 + 验证码一次性消费 + User 版本递增同事务
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          username: username.toLowerCase(),
+          name: username,
+          email,
+          password: hashedPassword,
+          emailVerified: new Date(),
+        },
+      });
+      await tx.verificationToken.deleteMany({ where: { identifier: email } });
+      await incrementTableVersion("User", tx);
+      return created;
+    });
 
     return NextResponse.json({
       success: true,

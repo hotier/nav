@@ -108,22 +108,25 @@ export async function POST(request: Request) {
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const user = await prisma.user.create({
-    data: {
-      username: username.toLowerCase(),
-      name: name || username,
-      email,
-      password: hashedPassword,
-      role,
-      // 管理员手动创建：视为已验证，账号立即可用
-      emailVerified: new Date(),
-    },
-    select: USER_SELECT,
-  });
-
   // 不再自动创建默认分类：新用户可直接使用他人的公开分类，
   // 也避免每个新用户都产生同名公开分类导致名称重复
+  // 数据写入 + 版本号递增同事务
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        username: username.toLowerCase(),
+        name: name || username,
+        email,
+        password: hashedPassword,
+        role,
+        // 管理员手动创建：视为已验证，账号立即可用
+        emailVerified: new Date(),
+      },
+      select: USER_SELECT,
+    });
+    await incrementTableVersion("User", tx);
+    return created;
+  });
 
-  await incrementTableVersion("User");
   return NextResponse.json(user, { status: 201 });
 }

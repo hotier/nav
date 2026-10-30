@@ -109,20 +109,22 @@ export async function POST(request: Request) {
       existingSlug = await prisma.category.findUnique({ where: { slug } });
     }
 
-    const category = await prisma.category.create({
-      data: {
-        name: result.data.name,
-        icon: result.data.icon,
-        parentId: result.data.parentId,
-        sortOrder: result.data.sortOrder ?? 0,
-        slug,
-        isPublic,
-        userId: session.user.id,
-      },
+    // 数据写入 + 版本号递增同事务（联动递增 Link 版本，分类可见性变更会影响链接）
+    const category = await prisma.$transaction(async (tx) => {
+      const created = await tx.category.create({
+        data: {
+          name: result.data.name,
+          icon: result.data.icon,
+          parentId: result.data.parentId,
+          sortOrder: result.data.sortOrder ?? 0,
+          slug,
+          isPublic,
+          userId: session.user.id,
+        },
+      });
+      await incrementTableVersion("Category", tx);
+      return created;
     });
-
-    // 版本号在响应返回前递增完成（联动递增 Link 版本，分类可见性变更会影响链接）
-    await incrementTableVersion("Category");
 
     return NextResponse.json(category, { status: 201 });
   } catch (error) {

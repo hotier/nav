@@ -16,10 +16,10 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "无效的数据格式" }, { status: 400 });
     }
 
-    // Update sort orders in transaction
-    await prisma.$transaction(
-      updates.map((update: { id: string; sortOrder: number }) =>
-        prisma.link.updateMany({
+    // 重排与版本号递增同事务：避免排序已落库、缓存仍读旧版本
+    await prisma.$transaction(async (tx) => {
+      for (const update of updates as Array<{ id: string; sortOrder: number }>) {
+        await tx.link.updateMany({
           where: {
             id: update.id,
             userId: session.user.id,
@@ -27,11 +27,10 @@ export async function PUT(request: Request) {
           data: {
             sortOrder: update.sortOrder,
           },
-        })
-      )
-    );
-
-    await incrementTableVersion("Link");
+        });
+      }
+      await incrementTableVersion("Link", tx);
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

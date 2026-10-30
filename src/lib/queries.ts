@@ -2,12 +2,15 @@
  * 统一查询层 —— 前端页面和后台 API 共用同一套缓存数据源
  *
  * 缓存策略（Vercel serverless 多实例环境）：
- *   - 版本化缓存键：读路径先 getTableVersion(table) 取数据版本，编进 SWR 键。
- *     写操作递增版本 → 所有实例的旧键天然失效，无需主动清除（invalidate* 已删除）。
+ *   - 版本化缓存键：读路径先 getTableVersion(table) 取数据版本，编进缓存键。
+ *     写操作递增版本 → 所有实例的旧键天然失效，无需主动清除。
  *   - 版本号读取禁止缓存：它是缓存键的构造依据，缓存它会拿到旧键→旧数据。
+ *   - 数据写入与版本号递增必须在同一事务里（见 incrementTableVersion 的 tx 参数），
+ *     否则可能出现「数据已提交、版本未递增」的窗口，读到旧缓存。
  *   - 权限 where 统一复用 permissions.ts 真源（buildCategoryWhere / buildLinkWhere），
  *     本文件不再手写复制可见性条件。
  */
+import type { Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { swr } from "@/lib/cache";
@@ -18,7 +21,6 @@ import {
   dashboardStatsKey,
 } from "@/lib/cache-keys";
 import { buildCategoryWhere, buildLinkWhere } from "@/lib/permissions";
-import { searchLinks as unifiedSearchLinks } from "@/lib/search";
 
 // ===================== 数据表版本号 =====================
 
@@ -40,12 +42,18 @@ export async function getTableVersion(table: string): Promise<number> {
  * 表数据变更后递增对应版本号（写路径调用方必须 await）。
  *
  * 单条原子 SQL：不存在则创建，存在则 +1，并返回新值。
+ * 必须与业务写入传入同一个事务客户端（tx），保证「数据提交」与「版本翻页」原子：
+ * 否则并发读可能在新数据落库前拿到新版本号。
+ *
  * 联动规则：
  *   - Category 变更影响链接可见范围 → 联动递增 Link
  *   - User 变更（改名/删号）影响链接的创建人展示与级联删除 → 联动递增 Link
  *   - Link/Category/User 变更 → 联动递增 DashboardStats（stats 缓存键随之翻页）
  */
-export async function incrementTableVersion(table: string): Promise<number> {
+export async function incrementTableVersion(
+  table: string,
+  db: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<number> {
   const keys = [table];
   if (table === "Category" || table === "User") keys.push("Link");
   if (table === "Link" || table === "Category" || table === "User") {
@@ -55,7 +63,7 @@ export async function incrementTableVersion(table: string): Promise<number> {
   let latestVersion = 0;
   for (const t of keys) {
     const key = `version:${t}`;
-    const rows = await prisma.$queryRaw<{ value: string }[]>`
+    const rows = await db.$queryRaw<{ value: string }[]>`
       INSERT INTO "AppSetting" ("key", "value")
       VALUES (${key}, '1')
       ON CONFLICT ("key")
@@ -117,13 +125,6 @@ export const getAllLinks = cache(async (userId?: string) => {
     });
   }, 2 * 60_000);
 });
-
-// ===================== 搜索（不缓存——查询变化太频繁） =====================
-// 统一转发到 lib/search.ts，规则只有一份真源。
-
-export async function searchLinks(query: string, userId?: string) {
-  return unifiedSearchLinks(query, userId);
-}
 
 // ===================== 仪表盘统计键 =====================
 

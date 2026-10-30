@@ -55,6 +55,14 @@ export function cleanUrl(raw: string): string {
   return url;
 }
 
+/**
+ * 链接查重键：`Link.urlKey` 的唯一约束维度（userId + urlKey）。
+ * 必须与数据库迁移里的回填口径一致（cleanUrl 后小写）。
+ */
+export function linkUrlKey(raw: string): string {
+  return cleanUrl(raw).toLowerCase();
+}
+
 /* ---------------------------------- 文本清洗 --------------------------------- */
 
 /** 常见命名实体（数字实体走通用分支，无需穷举）。 */

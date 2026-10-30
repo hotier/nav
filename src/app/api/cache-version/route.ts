@@ -14,12 +14,15 @@ import { prisma } from "@/lib/prisma";
  * - 读路径只读不写：findUnique，miss 返回 0（表从未被写过时）。
  *   原实现每次 GET 都 upsert（读路径写放大），已修正；行由 incrementTableVersion 首写时创建。
  */
+/** 只允许查询业务表版本，避免用任意 key 探测 AppSetting */
+const ALLOWED_TABLES = new Set(["Category", "Link", "User", "DashboardStats"]);
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const table = searchParams.get("table");
 
-  if (!table) {
-    return NextResponse.json({ error: "缺少 table 参数" }, { status: 400 });
+  if (!table || !ALLOWED_TABLES.has(table)) {
+    return NextResponse.json({ error: "无效的 table 参数" }, { status: 400 });
   }
 
   try {

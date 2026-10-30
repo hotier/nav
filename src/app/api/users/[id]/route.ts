@@ -65,30 +65,34 @@ export async function PATCH(
       return NextResponse.json({ error: "没有可更新的内容" }, { status: 400 });
     }
 
-    const updated = await prisma.user.update({
-      where: { id },
-      data: {
-        ...(role !== undefined ? { role } : {}),
-        // 重置密码（或改角色）都递增 tokenVersion → 旧 session/token 立即失效
-        ...(password !== undefined
-          ? { password: await bcrypt.hash(password, 10) }
-          : {}),
-        tokenVersion: { increment: 1 },
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        username: true,
-        image: true,
-        role: true,
-        isSystemAdmin: true,
-        createdAt: true,
-        _count: { select: { links: true } },
-      },
+    // 数据写入 + 版本号递增同事务
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { id },
+        data: {
+          ...(role !== undefined ? { role } : {}),
+          // 重置密码（或改角色）都递增 tokenVersion → 旧 session/token 立即失效
+          ...(password !== undefined
+            ? { password: await bcrypt.hash(password, 10) }
+            : {}),
+          tokenVersion: { increment: 1 },
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          username: true,
+          image: true,
+          role: true,
+          isSystemAdmin: true,
+          createdAt: true,
+          _count: { select: { links: true } },
+        },
+      });
+      await incrementTableVersion("User", tx);
+      return result;
     });
 
-    await incrementTableVersion("User");
     // 递增 tokenVersion → 清除认证缓存，旧 token 立即失效
     await deleteUserAuthCache(id);
     return NextResponse.json(updated);
@@ -133,10 +137,14 @@ export async function DELETE(
     }
   }
 
-  await prisma.user.delete({ where: { id } });
+  // 删用户会级联删其链接/分类 → 数据写入与版本号递增同事务
+  await prisma.$transaction(async (tx) => {
+    await tx.user.delete({ where: { id } });
+    await incrementTableVersion("User", tx);
+  });
+
   // 清除认证缓存：该用户旧 token 立即失效，无需等 Redis TTL
   await deleteUserAuthCache(id);
 
-  await incrementTableVersion("User");
   return NextResponse.json({ success: true });
 }

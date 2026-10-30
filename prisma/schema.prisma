@@ -97,6 +97,9 @@ model Link {
   id           String   @id @default(cuid())
   title        String
   url          String
+  // 归一化 URL（lowercase），与 userId 组成唯一约束。
+  // 查重的竞态只能由数据库约束兜底：应用层 findFirst 在并发下会同时通过。
+  urlKey       String
   altUrl       String?
   description  String?
   favicon      String?
@@ -113,6 +116,7 @@ model Link {
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, urlKey])
   @@index([userId])
   @@index([categoryId])
 }

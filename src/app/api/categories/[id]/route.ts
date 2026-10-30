@@ -134,12 +134,15 @@ export async function PUT(
       }
     }
 
-    const category = await prisma.category.update({
-      where: { id },
-      data: updateData,
+    // 数据写入 + 版本号递增同事务：可见性/父级变更会联动链接视图
+    const category = await prisma.$transaction(async (tx) => {
+      const updated = await tx.category.update({
+        where: { id },
+        data: updateData,
+      });
+      await incrementTableVersion("Category", tx);
+      return updated;
     });
-
-    await incrementTableVersion("Category");
 
     return NextResponse.json(category);
   } catch (error) {
@@ -184,11 +187,32 @@ export async function DELETE(
       return NextResponse.json({ error: "该分类已被管理员隐藏，无权删除" }, { status: 403 });
     }
 
-    await prisma.category.delete({
-      where: { id },
+    // 链接的 onDelete: Cascade 会把分类下所有链接一并删除，包括其他用户添加的。
+    // 删除前在同一事务里锁住分类行（并发插入 Link 需要父行 FOR KEY SHARE，与 FOR UPDATE 互斥），
+    // 统计他人在此分类下的链接数，>0 直接拒绝，避免静默销毁他人数据。
+    const foreignLinks = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Category" WHERE "id" = ${id} FOR UPDATE`;
+
+      const count = await tx.link.count({
+        where: { categoryId: id, userId: { not: session.user.id } },
+      });
+      if (count > 0) return count;
+
+      await tx.category.delete({ where: { id } });
+      await incrementTableVersion("Category", tx);
+      return 0;
     });
 
-    await incrementTableVersion("Category");
+    if (foreignLinks > 0) {
+      return NextResponse.json(
+        {
+          error: `该分类下有 ${foreignLinks} 个其他用户的链接，删除会一并丢失，已阻止；请先将这些链接移到其他分类`,
+          code: "CATEGORY_HAS_FOREIGN_LINKS",
+          foreignLinks,
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
