@@ -1,0 +1,31 @@
+{
+  // Cloudflare Workers 部署配置（对应决策文档 7.4 节，Workers 为 Vercel 之外的一等可选目标）
+  //
+  // 密钥不写在本文件里，部署前用 wrangler secret put 逐个写入：
+  //   wrangler secret put DATABASE_URL
+  //   wrangler secret put NUXT_SESSION_PASSWORD
+  //   wrangler secret put UPSTASH_REDIS_REST_URL
+  //   wrangler secret put UPSTASH_REDIS_REST_TOKEN
+  //   wrangler secret put RESEND_API_KEY
+  //   wrangler secret put RESEND_FROM
+  //
+  // 注意：wrangler 未加入 devDependencies（主部署目标是 Vercel，避免污染依赖树与安装体积）。
+  // 需要真正执行 wrangler deploy / secret put 时，先安装：pnpm add -D wrangler
+  // 构建产物由 `pnpm build:cf`（node scripts/build-cf.mjs）生成，NITRO_PRESET=cloudflare_module。
+
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "onenav",
+  "main": "./.output/server/index.mjs",
+  "compatibility_date": "2026-10-31",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Nitro cloudflare_module 预设产出的静态资源目录
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./.output/public"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

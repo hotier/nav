@@ -8,7 +8,6 @@
 - 分类管理（二级分类、自定义图标、公开/私有/隐藏）
 - 网页信息自动识别（标题、描述、图标，自动处理 GBK / GB18030 等中文编码）
 - 全站搜索 + 命令面板（`Ctrl / ⌘ + K`）
-- AI 智能搜索（支持 OpenAI 兼容 API）
 - 书签导入/导出（HTML / JSON）
 - 账号体系：用户名密码登录、邮箱验证码自助注册、忘记密码自助重置
 - 多主题切换（浅色 / 深色 / 系统）+ 主题色自定义
@@ -54,14 +53,12 @@ cp .env.example .env
 | `ADMIN_USERNAME` | | 管理员用户名，默认 `admin` |
 | `ADMIN_PASSWORD` | | 管理员初始密码（原始值，seed 自动 bcrypt 加密）。留空则自动生成 8 位随机密码 |
 | `ADMIN_EMAIL` | | 管理员邮箱，默认 `admin@example.com` |
-| `OPENAI_API_KEY` | | OpenAI API Key（可选，AI 搜索需要） |
-| `OPENAI_BASE_URL` | | OpenAI 兼容 API 地址，默认 `https://api.openai.com/v1` |
 | `UPSTASH_REDIS_REST_URL` | | Upstash Redis REST Endpoint（可选，多实例/Serverless 推荐） |
 | `UPSTASH_REDIS_REST_TOKEN` | | Upstash Redis REST Token（可选，需要写权限） |
 | `RESEND_API_KEY` | | Resend API Key（可选，自助注册与找回密码需要） |
 | `RESEND_FROM` | | 发件地址，如 `OneNav <noreply@your-domain.com>` |
 
-Nuxt 会按 `NUXT_*` 规则自动把环境变量注入 `runtimeConfig`（例如 `NUXT_DATABASE_URL`、`NUXT_OPENAI_API_KEY`）；本项目同时保留了 `DATABASE_URL` / `OPENAI_API_KEY` 等原始变量名的回落读取，直接填表里这些名字即可。
+Nuxt 会按 `NUXT_*` 规则自动把环境变量注入 `runtimeConfig`（例如 `NUXT_DATABASE_URL`）；本项目同时保留了 `DATABASE_URL` 等原始变量名的回落读取，直接填表里这些名字即可。
 
 **DATABASE_URL 格式：**
 
@@ -197,6 +194,30 @@ pm2 start "pnpm start" --name onenav
 
 **再次部署：** `pnpm build && pnpm start` 只做构建，幂等且不触碰数据库。schema 变更用 `pnpm db:migrate` 单独推进。
 
+### 方式三：Cloudflare Workers（可选）
+
+代码保持 Workers 可移植（服务端不依赖 `node:fs` / `node:crypto` / `Buffer`，数据库走 Neon serverless 驱动，邮件与限流走 REST），仓库已带 `wrangler.jsonc` 与跨平台构建脚本：
+
+```bash
+# 1. 以 Workers 预设构建，并校验脚本体积（默认 ≤ 3 MiB，免费版上限）
+pnpm build:cf
+pnpm check:cf-size
+
+# 2. 安装 wrangler（未放进 devDependencies，按需安装）并写入密钥
+pnpm add -D wrangler
+npx wrangler secret put DATABASE_URL
+npx wrangler secret put NUXT_SESSION_PASSWORD
+npx wrangler secret put UPSTASH_REDIS_REST_URL      # 可选
+npx wrangler secret put UPSTASH_REDIS_REST_TOKEN    # 可选
+npx wrangler secret put RESEND_API_KEY              # 可选
+npx wrangler secret put RESEND_FROM                 # 可选
+
+# 3. 部署
+npx wrangler deploy
+```
+
+> 能力边界：Workers **免费版**每请求 10ms CPU 无法稳定完成 bcrypt 登录，登录/注册/改密建议用 Paid（$5/月）或仍走 Vercel；匿名浏览、搜索、分类页免费版可用。详见 `docs/plans/2026-10-30-vue-nuxt-stack-decisions.md` 第 7.1 节。
+
 ### 首次部署日志示例
 
 ```
@@ -225,6 +246,10 @@ seed 是幂等的：管理员已存在时只补系统管理员标记；密码来
 |------|------|
 | `pnpm dev` / `pnpm build` / `pnpm preview` / `pnpm start` | 开发 / 构建 / 预览构建产物 / 生产启动 |
 | `pnpm typecheck` | 类型检查（vue-tsc） |
+| `pnpm lint` / `pnpm lint:fix` | ESLint 检查 / 自动修复（CI 门禁要求 0 error） |
+| `pnpm format` / `pnpm format:check` | Prettier 格式化 / 检查（暂未设为 CI 门禁） |
+| `pnpm build:cf` | 以 Cloudflare Workers 预设构建（`NITRO_PRESET=cloudflare_module`） |
+| `pnpm check:cf-size` | 校验 Worker 脚本 gzip 体积（默认 ≤ 3 MiB，可用 `--limit=<MiB>` 覆盖） |
 | `pnpm db:generate` | 根据 `server/database/schema.ts` 生成迁移 SQL |
 | `pnpm db:migrate` | 应用 `drizzle/` 中的迁移（默认测试库，生产需 `ALLOW_PROD_DB=1`） |
 | `pnpm db:check` | 检查迁移文件是否冲突 |
@@ -274,7 +299,11 @@ shared/
 drizzle/                  # 迁移 SQL 与快照
 scripts/
 ├── seed.ts               # 数据库初始化
-└── reset-password.ts     # 重置用户密码
+├── reset-password.ts     # 重置用户密码
+├── build-cf.mjs          # Cloudflare 预设构建（跨平台设置 NITRO_PRESET）
+└── check-cf-size.mjs     # Worker 脚本 gzip 体积门禁
+.github/workflows/ci.yml  # CI 门禁：typecheck → lint → build → build:cf → 体积检查
+wrangler.jsonc            # Cloudflare Workers 部署配置（wrangler 需按需自行安装）
 drizzle.config.ts         # 迁移配置（默认连 .env.development）
 nuxt.config.ts            # 模块、runtimeConfig、安全头、会话配置
 ```

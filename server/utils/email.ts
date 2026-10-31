@@ -1,7 +1,7 @@
-import { Resend } from "resend";
-
 const DEFAULT_FROM = "OneNav <noreply@nav.hotier.cc.cd>";
 const DEFAULT_SITE_NAME = "OneNav";
+/** Resend 邮件发送接口：直接用 Nitro 全局 $fetch 调用，不依赖 resend SDK */
+const RESEND_API_URL = "https://api.resend.com/emails";
 
 /** 读取邮件相关配置：runtimeConfig（Workers 兼容）优先，环境变量兜底 */
 function mailConfig(key: "resendApiKey" | "resendFrom"): string {
@@ -38,6 +38,52 @@ export class EmailSendError extends Error {
     this.name = "EmailSendError";
     this.statusCode = statusCode;
   }
+}
+
+/** Resend 在 HTTP 非 2xx 时返回的错误体 */
+type ResendErrorBody = {
+  message?: string;
+  name?: string;
+  statusCode?: number;
+};
+
+/** $fetch 抛出的 FetchError 的最小结构（按需读取，避免额外 import ofetch） */
+type FetchErrorLike = {
+  statusCode?: number | string;
+  status?: number;
+  data?: unknown;
+  response?: { status?: number; _data?: unknown };
+};
+
+/** 从 FetchError 中取 HTTP 状态码：ofetch 可能落在 statusCode / status / response.status 上 */
+function pickStatusCode(error: FetchErrorLike): number | null {
+  const candidates = [error.statusCode, error.status, error.response?.status];
+  for (const value of candidates) {
+    const code = typeof value === "string" ? Number(value) : value;
+    if (typeof code === "number" && Number.isFinite(code) && code > 0) return code;
+  }
+  return null;
+}
+
+/** 取 Resend 返回的 message / name，取不到时退化为 HTTP <status> */
+function pickErrorMessage(body: unknown, statusCode: number | null): string {
+  if (body && typeof body === "object") {
+    const { message, name } = body as ResendErrorBody;
+    if (typeof message === "string" && message.trim()) return message.trim();
+    if (typeof name === "string" && name.trim()) return name.trim();
+  }
+  return statusCode ? `HTTP ${statusCode}` : "邮件发送失败";
+}
+
+/**
+ * 把 $fetch 的异常（HTTP 非 2xx 的 FetchError 或网络异常）统一包成 EmailSendError，
+ * 不让原始异常泄漏给上层；状态码透传，便于调用方识别 429 等限流场景。
+ */
+function toEmailSendError(error: unknown): EmailSendError {
+  const err = (error ?? {}) as FetchErrorLike;
+  const statusCode = pickStatusCode(err);
+  const body = err.data ?? err.response?._data;
+  return new EmailSendError(pickErrorMessage(body, statusCode), statusCode);
 }
 
 /**
@@ -83,12 +129,7 @@ async function sendCodeEmail(opts: {
     ? `此邮件由 <a href="${siteUrl}" style="color:#9ca3af;text-decoration:underline;">${site}</a> 系统自动发送，请勿直接回复。`
     : `此邮件由 ${site} 系统自动发送，请勿直接回复。`;
 
-  const resend = new Resend(apiKey);
-  const { error } = await resend.emails.send({
-    from,
-    to: opts.to,
-    subject: opts.subject,
-    html: `
+  const html = `
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0;padding:0;background:#f4f6f8;" bgcolor="#f4f6f8">
         <tr>
           <td align="center" style="padding:32px 16px;">
@@ -122,10 +163,25 @@ async function sendCodeEmail(opts: {
           </td>
         </tr>
       </table>
-    `,
-  });
-  if (error) {
-    throw new EmailSendError(error.message, error.statusCode);
+    `;
+
+  try {
+    await $fetch(RESEND_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: {
+        from,
+        to: opts.to,
+        subject: opts.subject,
+        html,
+      },
+    });
+  } catch (error) {
+    // $fetch 对非 2xx 默认抛 FetchError，这里统一转成 EmailSendError
+    throw toEmailSendError(error);
   }
 }
 

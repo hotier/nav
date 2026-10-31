@@ -1,0 +1,7 @@
+node_modules
+.nuxt
+.output
+.vercel
+pnpm-lock.yaml
+drizzle
+public

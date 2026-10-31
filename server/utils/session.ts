@@ -10,14 +10,12 @@
  * 密封密钥来自 NUXT_SESSION_PASSWORD；开发环境缺省时用 AUTH_SECRET 派生临时密钥。
  */
 import { eq } from "drizzle-orm";
-import { type H3Event } from "h3";
+import type { H3Event } from "h3";
 import { getDb } from "./db";
 import { users } from "~~/server/database/schema";
 import { getAuthSecret } from "./auth-secret";
 import { sha256Base64 } from "./crypto";
 import { getUserAuthCache, setUserAuthCache } from "./user-cache";
-
-const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 
 export interface SessionUser {
   id: string;

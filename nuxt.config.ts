@@ -2,7 +2,14 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-10-30",
   devtools: { enabled: false },
   css: ["~/assets/css/main.css"],
-  modules: ["@nuxt/ui", "@pinia/nuxt", "@pinia/colada-nuxt", "nuxt-auth-utils", "nuxt-security"],
+  modules: [
+    "@nuxt/ui",
+    "@pinia/nuxt",
+    "@pinia/colada-nuxt",
+    "nuxt-auth-utils",
+    "nuxt-security",
+    "@nuxt/eslint",
+  ],
   app: {
     head: {
       titleTemplate: "%s · OneNav",
@@ -44,8 +51,6 @@ export default defineNuxtConfig({
     upstashRedisRestToken: "",
     resendApiKey: "",
     resendFrom: "",
-    openaiApiKey: "",
-    openaiBaseUrl: "",
     // nuxt-auth-utils 密封会话：password 由 NUXT_SESSION_PASSWORD 注入（构建产物中只读，不可运行期赋值）
     session: {
       name: "onenav_session",

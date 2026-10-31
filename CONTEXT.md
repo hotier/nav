@@ -114,7 +114,6 @@ OneNav：Nuxt 4（Vue 3 + Nitro）导航站。
 - **重复 URL 由数据库兜底**：`uniqueIndex(Link_userId_urlKey_key)`，`urlKey = linkUrlKey(url)`（= `cleanUrl(url).toLowerCase()`，见 `server/utils/recognize-url.ts`）；应用层先查一次只为友好提示，并发下用 `isUniqueViolation` 判断（PG `23505`，Drizzle 把驱动错误包在 `cause` 链里，需逐层找）
 - 删除分类前先统计他人在该分类下的链接数，>0 直接 409——外键是 `onDelete: cascade`，不拦会静默删掉他人链接
 - 服务端内存缓存为 LRU（上限 200），条目默认 TTL 60s；`/api/account`、`/api/users`（admin 低频）不走版本键缓存，直查 DB
-- `GET /api/cache-version` 是 Next 时代客户端版本比对的遗留接口，当前前端无调用方（Colada 失效不再需要它），待确认后删除
 
 ## 已知缺陷与历史（截至 Nuxt 重写）
 
@@ -129,6 +128,18 @@ OneNav：Nuxt 4（Vue 3 + Nitro）导航站。
 9. ~~sortOrder 分类内 / 全局双轨~~ ✅ 统一为用户内全局编号；生产数据已迁完，`scripts/migrate-sort-order.ts` 与旧 Prisma 迁移在 P6 一并删除
 
 **仍存在的已知限制**（不是 bug）：无限滚动视图的拖拽只对「已加载项」重编号；搜索页禁拖（`LinksGrid :draggable="false"`），因为搜索结果是全量数据的子集，拖拽重编号会污染全局顺序。
+
+### 2026-10-31 P6 收口（详见 `docs/plans/2026-10-31-remaining-decisions.md`）
+
+10. ~~`resend` / `openai` / `clsx` / `tailwind-merge` 依赖与 SDK 形态客户端~~ ✅ `email.ts` 改 `$fetch` 调 Resend REST（错误语义与 429 透传不变）；`openai.ts`、`utils.ts` 确认为 0 调用方死代码后删除；`GET /api/cache-version` 一并删除
+11. ~~主题双实现（自研 `useTheme` 手工 toggle class）~~ ✅ `useTheme` 收口为 `useColorMode()` 薄封装，「5 天过期回 system」保留（`nuxt.config` head 内联脚本负责首帧，切换时续期 `theme-expiry`）
+12. **AI 智能搜索确认未实现**（`getOpenAI` 从未被调用）：已删死代码与 `runtimeConfig.openai*`，README 不再声称该功能。如需实现另立需求，届时用 `$fetch` 调 OpenAI 兼容 REST，不引 SDK
+
+## 工程门禁
+
+- CI（`.github/workflows/ci.yml`）：`typecheck` → `lint` → `build`（Vercel）→ `build:cf` → `check:cf-size`；构建期**不碰数据库**
+- `pnpm lint` 以 0 error 为门禁，warning 不阻断；**代码库尚未全量 Prettier 化**，`pnpm format` 仅供按需使用，`format:check` 不进 CI
+- Cloudflare 目标为 **Paid**（免费版 10ms CPU 跑不动 bcrypt 登录）；体积门禁按最严的 3 MiB（免费版上限）统计 `.output/server` 并排除 `*.map`，`.output/public` 属静态资源不计入
 
 **未实施的优化方向**：权限规则表驱动（身份×场景×操作矩阵数据化 + 解释器）。历史上否决过的方案：删服务端缓存（性能倒退）、把 Upstash Redis 设为必选（过度工程，保持可选）。
 
@@ -185,4 +196,5 @@ OneNav：Nuxt 4（Vue 3 + Nitro）导航站。
 - `server/utils/session.ts` — 会话与对账真源
 - `docs/plans/2026-08-20-visibility-consistency-design.md` — 权限 / 搜索 / 缓存单一来源化改造（`search.ts`、`cache-keys.ts` 的由来）
 - `docs/plans/2026-10-30-vue-nuxt-stack-decisions.md` — Nuxt 重写的选型决策记录
+- `docs/plans/2026-10-31-remaining-decisions.md` — 未决项定稿（主题过期 / OAuth / lint / 旧表 / 视觉 / CF 档位 / 统计指标）+ P6 清理与 CI 落地
 - `docs/superpowers/` — Next.js 时代的实现计划与设计文档（历史归档，代码路径已过时）

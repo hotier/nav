@@ -10,7 +10,7 @@
  *   - 权限条件统一复用 permissions.ts 真源（buildCategoryWhere / buildLinkWhere），
  *     本文件不再手写复制可见性条件。
  */
-import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { asc, count, desc, eq, sql } from "drizzle-orm";
 import { getDb, rowsOf, type DbExecutor } from "./db";
 import { swr } from "./cache";
 import {

@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - vue
+  pull_request:
+
+# 同一分支/PR 的新提交取消上一次未完成的运行，节省额度
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+  # 与 package.json 的 packageManager 字段保持一致
+  PNPM_VERSION: "12.4.1"
+
+jobs:
+  build:
+    name: typecheck / lint / build / cf-size
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm 必须先于 setup-node 安装，setup-node 的 cache: pnpm 才能生效
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # 缓存 pnpm store，key 由 lockfile 决定
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # 显式指定官方源：仓库 .npmrc 默认走 npmmirror，CI 需要与 lockfile 一致的可复现安装
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --registry=https://registry.npmjs.org
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # ESLint 门禁：要求 0 error（warning 不阻断）
+      - name: Lint
+        run: pnpm lint
+
+      # 主部署目标：Vercel（node-server 预设），构建期不连数据库，因此不做 migrate/seed
+      - name: Build (Vercel preset)
+        run: pnpm build
+
+      - name: Build (Cloudflare preset)
+        run: pnpm build:cf
+
+      # Workers 免费版 gzip 上限 3 MiB，超出即失败
+      - name: Check Cloudflare bundle size
+        run: pnpm check:cf-size

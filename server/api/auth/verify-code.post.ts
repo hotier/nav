@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { getDb, getDbPool } from "~~/server/utils/db";
+import { getDb } from "~~/server/utils/db";
 import { getAuthSecret } from "~~/server/utils/auth-secret";
 import { getClientIp, isRateLimited } from "~~/server/utils/rate-limit";
 import { encodeBase64Url, hmacSha256Hex, timingSafeEqual } from "~~/server/utils/crypto";
