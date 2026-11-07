@@ -21,9 +21,11 @@ import {
 } from "./cache-keys";
 import { buildCategoryWhere, buildLinkWhere } from "./permissions";
 import { appSettings, categories, links } from "~~/server/database/schema";
+import { linkColumns } from "~~/server/database/link-columns";
 
 export type CategoryRow = typeof categories.$inferSelect;
-export type LinkRow = typeof links.$inferSelect;
+/** 链接读路径的行类型：与 linkColumns 对齐（不含 urlKey） */
+export type LinkRow = Omit<typeof links.$inferSelect, "urlKey">;
 export type LinkWithCategory = LinkRow & {
   category: Pick<CategoryRow, "id" | "name" | "icon">;
 };
@@ -153,7 +155,7 @@ export async function getAllLinks(userId?: string): Promise<LinkWithCategory[]> 
     async () => {
       const rows = await getDb()
         .select({
-          link: links,
+          link: linkColumns,
           category: {
             id: categories.id,
             name: categories.name,

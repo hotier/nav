@@ -3,6 +3,7 @@ import { getDb } from "~~/server/utils/db";
 import { getSession } from "~~/server/utils/session";
 import { buildSearchWhere, scoreAndSort } from "~~/server/utils/search";
 import { defineApiHandler } from "~~/server/utils/api";
+import { linkColumns } from "~~/server/database/link-columns";
 import { categories, links } from "~~/server/database/schema";
 
 export default defineApiHandler(async (event) => {
@@ -15,7 +16,7 @@ export default defineApiHandler(async (event) => {
 
   // 可见性 + 文本匹配统一走 server/utils/search.ts
   const rows = await getDb()
-    .select({ link: links, category: { id: categories.id, name: categories.name } })
+    .select({ link: linkColumns, category: { id: categories.id, name: categories.name } })
     .from(links)
     .innerJoin(categories, eq(links.categoryId, categories.id))
     .where(buildSearchWhere(userId, userRole, query))

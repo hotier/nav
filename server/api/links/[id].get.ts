@@ -2,6 +2,7 @@ import { and, eq, or, type SQL } from "drizzle-orm";
 import { getDb } from "~~/server/utils/db";
 import { requireSession } from "~~/server/utils/session";
 import { defineApiHandler, fail } from "~~/server/utils/api";
+import { linkColumns } from "~~/server/database/link-columns";
 import { categories, links } from "~~/server/database/schema";
 
 export default defineApiHandler(async (event) => {
@@ -22,7 +23,10 @@ export default defineApiHandler(async (event) => {
   }
 
   const [row] = await getDb()
-    .select({ link: links, category: categories })
+    .select({
+      link: linkColumns,
+      category: categories,
+    })
     .from(links)
     .innerJoin(categories, eq(links.categoryId, categories.id))
     .where(and(eq(links.id, id), or(...visible)))

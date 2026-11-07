@@ -2,6 +2,7 @@ import { and, asc, desc, eq, or, type SQL } from "drizzle-orm";
 import { getDb } from "~~/server/utils/db";
 import { requireSession } from "~~/server/utils/session";
 import { defineApiHandler, fail } from "~~/server/utils/api";
+import { linkColumns } from "~~/server/database/link-columns";
 import { categories, links } from "~~/server/database/schema";
 
 function escapeHtml(text: string): string {
@@ -48,7 +49,7 @@ export default defineApiHandler(async (event) => {
         .where(and(...catConditions))
         .orderBy(asc(categories.sortOrder)),
       db
-        .select({ link: links, categoryName: categories.name })
+        .select({ link: linkColumns, categoryName: categories.name })
         .from(links)
         .innerJoin(categories, eq(links.categoryId, categories.id))
         .where(and(...linkConditions))

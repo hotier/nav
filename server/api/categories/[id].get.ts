@@ -3,6 +3,7 @@ import { getDb } from "~~/server/utils/db";
 import { requireSession } from "~~/server/utils/session";
 import { buildCategoryWhere, buildLinkWhere, type LinkViewScope } from "~~/server/utils/permissions";
 import { defineApiHandler, fail } from "~~/server/utils/api";
+import { linkColumns } from "~~/server/database/link-columns";
 import { categories, links } from "~~/server/database/schema";
 
 export default defineApiHandler(async (event) => {
@@ -30,7 +31,7 @@ export default defineApiHandler(async (event) => {
       .where(and(eq(categories.parentId, id), categoryWhere))
       .orderBy(asc(categories.sortOrder)),
     db
-      .select()
+      .select(linkColumns)
       .from(links)
       .where(and(eq(links.categoryId, id), linkWhere))
       .orderBy(desc(links.isPinned), asc(links.sortOrder), asc(links.createdAt)),

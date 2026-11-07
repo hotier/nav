@@ -6,6 +6,7 @@ import { getTableVersion } from "~~/server/utils/queries";
 import { buildLinkWhere, type LinkViewScope } from "~~/server/utils/permissions";
 import { linkListKey } from "~~/server/utils/cache-keys";
 import { defineApiHandler } from "~~/server/utils/api";
+import { linkColumns } from "~~/server/database/link-columns";
 import { categories, links, users } from "~~/server/database/schema";
 
 export default defineApiHandler(async (event) => {
@@ -40,7 +41,7 @@ export default defineApiHandler(async (event) => {
       const [rows, totals] = await Promise.all([
         db
           .select({
-            link: links,
+            link: linkColumns,
             user: {
               id: users.id,
               name: users.name,

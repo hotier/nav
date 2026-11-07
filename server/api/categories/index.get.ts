@@ -6,6 +6,7 @@ import { getTableVersion } from "~~/server/utils/queries";
 import { buildCategoryWhere, buildLinkWhere, type LinkViewScope } from "~~/server/utils/permissions";
 import { categoryKey } from "~~/server/utils/cache-keys";
 import { defineApiHandler } from "~~/server/utils/api";
+import { linkColumns } from "~~/server/database/link-columns";
 import { categories, links, users } from "~~/server/database/schema";
 
 export default defineApiHandler(async (event) => {
@@ -60,7 +61,7 @@ export default defineApiHandler(async (event) => {
       const allIds = rows.map((row) => row.category.id);
       const linkRows = allIds.length
         ? await db
-            .select()
+            .select(linkColumns)
             .from(links)
             .where(and(inArray(links.categoryId, allIds), linkWhere))
             .orderBy(desc(links.isPinned), asc(links.sortOrder), asc(links.createdAt))

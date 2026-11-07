@@ -7,6 +7,7 @@ import { assertCanAddLinkToCategory } from "~~/server/utils/permissions";
 import { cleanUrl, linkUrlKey } from "~~/server/utils/recognize-url";
 import { probeImageUrl } from "~~/server/utils/probe-image";
 import { defineApiHandler, fail } from "~~/server/utils/api";
+import { linkColumns } from "~~/server/database/link-columns";
 import { categories, links } from "~~/server/database/schema";
 
 export default defineApiHandler(async (event) => {
@@ -22,7 +23,7 @@ export default defineApiHandler(async (event) => {
   const isAdmin = session.user.role === "admin";
 
   const [existingRow] = await getDb()
-    .select({ link: links, category: categories })
+    .select({ link: linkColumns, category: categories })
     .from(links)
     .innerJoin(categories, eq(links.categoryId, categories.id))
     .where(eq(links.id, id))

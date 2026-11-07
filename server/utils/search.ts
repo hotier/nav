@@ -14,6 +14,7 @@ import { and, asc, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { getDb } from "./db";
 import { buildLinkWhere, type LinkViewScope } from "./permissions";
 import { categories, links } from "~~/server/database/schema";
+import { linkColumns } from "~~/server/database/link-columns";
 import type { CategoryRow, LinkRow } from "./queries";
 
 export type SearchOptions = {
@@ -90,7 +91,7 @@ export async function searchLinks(
   const limit = opts?.limit ?? 50;
   const where = buildSearchWhere(userId, userRole, q);
   const rows = await getDb()
-    .select({ link: links, category: categories })
+    .select({ link: linkColumns, category: categories })
     .from(links)
     .innerJoin(categories, eq(links.categoryId, categories.id))
     .where(where)
