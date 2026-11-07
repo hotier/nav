@@ -29,7 +29,7 @@
           </div>
           <h2 class="text-xl font-semibold text-foreground">未开放自助重置密码</h2>
           <p class="text-sm text-muted-foreground mt-2 leading-relaxed">
-            当前系统未配置邮件服务，无法发送验证码。<br />
+            当前系统未配置邮件服务，无法发送验证码。<br >
             如需重置密码，请联系站点管理员在后台为你重置。
           </p>
           <NuxtLink to="/login" class="inline-flex items-center gap-1 mt-6 text-xs text-muted-foreground hover:text-primary transition-colors">
@@ -51,7 +51,7 @@
                     ? 'bg-background text-foreground border-sky-500 shadow-sm'
                     : 'bg-muted/40 text-muted-foreground border-border'"
               >
-                <UIcon name="i-lucide-check" v-if="step > s.n" class="h-3.5 w-3.5" />
+                <UIcon v-if="step > s.n" name="i-lucide-check" class="h-3.5 w-3.5" />
                 <template v-else>{{ s.n }}</template>
               </div>
               <span class="font-medium" :class="step >= s.n ? 'text-foreground' : 'text-muted-foreground'">
@@ -78,70 +78,64 @@
                   <p class="text-sm text-muted-foreground mt-1">输入注册邮箱获取验证码，验证通过后即可重置密码</p>
                 </div>
 
-                <div class="space-y-2">
-                  <label class="text-xs font-medium text-muted-foreground">注册邮箱</label>
-                  <div class="relative">
-                    <UIcon name="i-lucide-mail" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                      v-model="account"
-                      type="email"
-                      inputmode="email"
-                      autocomplete="email"
-                      placeholder="输入注册邮箱"
-                      :disabled="isVerifying"
-                      class="reset-input h-12 pl-11"
-                    />
-                  </div>
-                  <p v-if="account.trim() !== '' && !EMAIL_REGEX.test(account.trim())" role="status" class="flex items-center gap-1.5 text-xs mt-1.5 text-danger">
+                <UFormField label="注册邮箱">
+                  <UInput
+                    v-model="account"
+                    type="email"
+                    inputmode="email"
+                    autocomplete="email"
+                    placeholder="输入注册邮箱"
+                    :disabled="isVerifying"
+                    icon="i-lucide-mail"
+                    size="lg"
+                    class="w-full"
+                  />
+                  <p v-if="account.trim() !== '' && !EMAIL_REGEX.test(account.trim())" role="status" class="mt-1.5 flex items-center gap-1.5 text-xs text-error">
                     <UIcon name="i-lucide-circle-alert" class="h-3.5 w-3.5 shrink-0" />
                     请输入正确的邮箱
                   </p>
-                </div>
+                </UFormField>
 
-                <div class="space-y-2">
-                  <label class="text-xs font-medium text-muted-foreground">邮箱验证码</label>
-                  <div class="relative">
-                    <UIcon name="i-lucide-shield-check" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                      :value="code"
-                      type="text"
-                      inputmode="numeric"
-                      maxlength="6"
-                      placeholder="验证码"
-                      :disabled="isVerifying"
-                      class="reset-input h-12 pl-11 pr-[7.5rem] tracking-[0.3em] font-mono placeholder:tracking-normal placeholder:font-sans"
-                      @input="code = ($event.target as HTMLInputElement).value.replace(/\D/g, '')"
-                    />
-                    <button
-                      type="button"
-                      :disabled="cooldown > 0 || isSending || isVerifying"
-                      class="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 px-3.5 rounded-lg text-xs font-semibold transition-all"
-                      :class="cooldown > 0 ? 'text-muted-foreground cursor-not-allowed' : 'text-sky-600 dark:text-sky-400 hover:bg-sky-500/10 active:scale-[0.97]'"
-                      @click="handleSendCode"
-                    >
-                      <span v-if="isSending" class="inline-flex items-center gap-1.5">
-                        <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-                        发送中
-                      </span>
-                      <template v-else>{{ cooldown > 0 ? `${cooldown}s 后重发` : "获取验证码" }}</template>
-                    </button>
-                  </div>
-                </div>
+                <UFormField label="邮箱验证码">
+                  <UInput
+                    :model-value="code"
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="6"
+                    placeholder="验证码"
+                    :disabled="isVerifying"
+                    icon="i-lucide-shield-check"
+                    size="lg"
+                    class="w-full"
+                    :ui="{ base: 'tracking-[0.3em] font-mono' }"
+                    @update:model-value="(v) => (code = String(v ?? '').replace(/\D/g, ''))"
+                  >
+                    <template #trailing>
+                      <UButton
+                        type="button"
+                        variant="link"
+                        color="primary"
+                        size="xs"
+                        :disabled="cooldown > 0 || isSending || isVerifying"
+                        :loading="isSending"
+                        @click="handleSendCode"
+                      >
+                        {{ cooldown > 0 ? `${cooldown}s 后重发` : "获取验证码" }}
+                      </UButton>
+                    </template>
+                  </UInput>
+                </UFormField>
 
-                <button
+                <UButton
                   type="submit"
-                  :disabled="isVerifying"
-                  class="w-full h-12 rounded-xl text-base font-semibold text-white bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-500 hover:from-sky-600 hover:via-blue-600 hover:to-cyan-600 shadow-lg shadow-sky-500/25 transition-all duration-200 disabled:opacity-60"
+                  :loading="isVerifying"
+                  block
+                  size="lg"
+                  icon="i-lucide-shield-check"
+                  class="h-12 rounded-xl bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-500 text-base font-semibold text-white shadow-lg shadow-sky-500/25 hover:from-sky-600 hover:via-blue-600 hover:to-cyan-600"
                 >
-                  <span v-if="isVerifying" class="inline-flex items-center gap-2">
-                    <span class="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                    验证中...
-                  </span>
-                  <span v-else class="inline-flex items-center gap-2">
-                    <UIcon name="i-lucide-shield-check" class="h-4 w-4" />
-                    验证并继续
-                  </span>
-                </button>
+                  验证并继续
+                </UButton>
 
                 <p class="text-center text-xs text-muted-foreground">未收到验证码？请检查垃圾邮件或稍后重试</p>
               </form>
@@ -159,36 +153,42 @@
                   <UIcon name="i-lucide-arrow-left" class="h-3.5 w-3.5" />返回上一步
                 </button>
 
-                <div class="space-y-2">
-                  <label class="text-xs font-medium text-muted-foreground">新密码</label>
-                  <div class="relative">
-                    <UIcon name="i-lucide-lock" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input v-model="newPassword" type="password" placeholder="输入新密码（至少6位）" autocomplete="new-password" :disabled="isSubmitting" class="reset-input h-12 pl-11" />
-                  </div>
-                </div>
+                <UFormField label="新密码">
+                  <UInput
+                    v-model="newPassword"
+                    type="password"
+                    placeholder="输入新密码（至少6位）"
+                    autocomplete="new-password"
+                    :disabled="isSubmitting"
+                    icon="i-lucide-lock"
+                    size="lg"
+                    class="w-full"
+                  />
+                </UFormField>
 
-                <div class="space-y-2">
-                  <label class="text-xs font-medium text-muted-foreground">确认新密码</label>
-                  <div class="relative">
-                    <UIcon name="i-lucide-lock" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input v-model="confirmPassword" type="password" placeholder="再次输入新密码" autocomplete="new-password" :disabled="isSubmitting" class="reset-input h-12 pl-11" />
-                  </div>
-                </div>
+                <UFormField label="确认新密码">
+                  <UInput
+                    v-model="confirmPassword"
+                    type="password"
+                    placeholder="再次输入新密码"
+                    autocomplete="new-password"
+                    :disabled="isSubmitting"
+                    icon="i-lucide-lock"
+                    size="lg"
+                    class="w-full"
+                  />
+                </UFormField>
 
-                <button
+                <UButton
                   type="submit"
-                  :disabled="isSubmitting"
-                  class="w-full h-12 rounded-xl text-base font-semibold text-white bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-500 hover:from-sky-600 hover:via-blue-600 hover:to-cyan-600 shadow-lg shadow-sky-500/25 transition-all duration-200 disabled:opacity-60"
+                  :loading="isSubmitting"
+                  block
+                  size="lg"
+                  icon="i-lucide-key"
+                  class="h-12 rounded-xl bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-500 text-base font-semibold text-white shadow-lg shadow-sky-500/25 hover:from-sky-600 hover:via-blue-600 hover:to-cyan-600"
                 >
-                  <span v-if="isSubmitting" class="inline-flex items-center gap-2">
-                    <span class="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                    重置中...
-                  </span>
-                  <span v-else class="inline-flex items-center gap-2">
-                    <UIcon name="i-lucide-key" class="h-4 w-4" />
-                    重置密码
-                  </span>
-                </button>
+                  重置密码
+                </UButton>
               </form>
             </div>
           </div>
@@ -337,27 +337,5 @@ onBeforeUnmount(() => {
 }
 .reset-title {
   font-family: var(--font-space-grotesk);
-}
-.reset-input {
-  width: 100%;
-  border-radius: 0.75rem;
-  border: 1px solid color-mix(in oklab, var(--color-border) 60%, transparent);
-  background: color-mix(in oklab, var(--color-muted) 40%, transparent);
-  font-size: 1rem;
-  color: var(--color-foreground);
-  padding-right: 0.75rem;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.reset-input::placeholder {
-  color: var(--color-muted-foreground);
-  font-size: 0.875rem;
-}
-.reset-input:focus {
-  border-color: var(--color-ring);
-  box-shadow: 0 0 0 1px var(--color-ring);
-}
-.reset-input:disabled {
-  opacity: 0.6;
 }
 </style>

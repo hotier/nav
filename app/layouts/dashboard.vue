@@ -43,7 +43,7 @@
                     :src="proxyImageUrl(user.image, 128)"
                     alt=""
                     class="h-full w-full object-cover"
-                  />
+                  >
                   <span
                     v-else
                     class="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary to-sky-500 text-sm font-medium text-white"
@@ -64,48 +64,47 @@
     </header>
 
     <div class="flex flex-1">
-      <aside class="sticky top-16 hidden h-[calc(100vh-4rem)] w-60 shrink-0 overflow-y-auto border-r border-border bg-card p-4 lg:block">
-        <p class="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground font-display">
+      <!--
+        侧栏紧凑化：w-60 → w-52，导航行 44px → 36px（图标 9x9 → 7x7），
+        快捷键提示改成底部一行细提示，不再占一整块卡片高度。
+      -->
+      <aside class="sticky top-16 hidden h-[calc(100vh-4rem)] w-52 shrink-0 flex-col overflow-y-auto border-r border-border bg-card px-3 py-4 lg:flex">
+        <p class="px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground font-display">
           管理后台
         </p>
-        <nav class="mt-3 space-y-1">
+        <nav class="mt-2 space-y-0.5">
           <NuxtLink
             v-for="item in visibleItems"
             :key="item.to"
             :to="item.to"
-            class="group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
+            class="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors"
             :class="isActive(item.to)
-              ? 'bg-gradient-to-r from-primary/10 to-cyan-500/10 text-primary'
-              : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'"
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-primary/8 hover:text-foreground'"
           >
-            <span
-              class="flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
-              :class="isActive(item.to) ? 'bg-primary/15 text-primary' : 'group-hover:bg-primary/10 group-hover:text-primary'"
-            >
-              <UIcon :name="item.icon" class="h-5 w-5" />
-            </span>
-            <span class="flex-1 truncate">{{ item.label }}</span>
             <UIcon
-              v-if="isActive(item.to)"
-              name="i-lucide-chevron-right"
-              class="h-4 w-4"
+              :name="item.icon"
+              class="h-[18px] w-[18px] shrink-0"
+              :class="isActive(item.to) ? 'text-primary' : 'group-hover:text-primary'"
             />
+            <span class="flex-1 truncate">{{ item.label }}</span>
+            <UIcon v-if="isActive(item.to)" name="i-lucide-chevron-right" class="h-3.5 w-3.5" />
           </NuxtLink>
         </nav>
 
-        <div class="mt-6 rounded-xl border border-border/60 bg-muted/30 p-4">
-          <p class="text-xs font-semibold text-foreground">快捷键</p>
-          <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-            在首页按 <UKbd>/</UKbd> 聚焦搜索框
-          </p>
-          <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-            <UKbd>Ctrl K</UKbd> 打开命令面板
-          </p>
+        <div class="mt-auto space-y-1 border-t border-border/60 pt-3 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="flex items-center gap-1.5"><UKbd size="sm">/</UKbd>聚焦搜索</p>
+          <p class="flex items-center gap-1.5"><UKbd size="sm">Ctrl K</UKbd>命令面板</p>
         </div>
       </aside>
 
-      <main class="flex min-w-0 flex-1 flex-col px-4 pt-4 sm:px-6 lg:pt-6">
-        <div class="flex-1 rounded-2xl border border-border/60 bg-card p-4 shadow-sm sm:p-6 lg:p-8">
+      <!--
+        布局只负责外壳（间距 + 滚动），不再套一层卡片：
+        各页面自己用 rounded-2xl border bg-card 组织内容，
+        避免「卡片套卡片」导致边框双层、内边距叠加（外层 p-8 + 内层 p-6 = 左右 56px）。
+      -->
+      <main class="flex min-w-0 flex-1 flex-col px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
+        <div class="flex-1">
           <slot />
         </div>
         <SiteFooter />
@@ -142,7 +141,7 @@ import type { SessionUser } from "~~/shared/types";
 
 const route = useRoute();
 const requestFetch = useRequestFetch();
-const toast = useToast();
+const toast = useAppToast();
 
 const { data: sessionData } = useQuery({
   key: qk.session(),
@@ -189,7 +188,7 @@ async function signOut() {
   }
   const { clear } = useUserSession();
   clear();
-  toast.add({ title: "已退出登录", icon: "i-lucide-check" });
+  toast.success("已退出登录");
   await navigateTo("/login");
 }
 

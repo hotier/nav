@@ -9,12 +9,13 @@
 
   <div v-else-if="category" class="space-y-6">
     <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-2xl font-bold text-foreground font-display">
-        <span v-if="category.icon" class="mr-2 inline-block align-middle">
-          <DynamicIcon :name="category.icon" class="h-6 w-6" />
+      <h2 class="flex items-baseline gap-2 text-2xl font-bold text-foreground font-display">
+        <span class="inline-flex items-center gap-2">
+          <DynamicIcon v-if="category.icon" :name="category.icon" class-name="h-6 w-6" />
+          {{ category.name }}
         </span>
-        {{ category.name }}
-        <span class="ml-2 text-sm font-normal text-muted-foreground">({{ categoryLinks.length }})</span>
+        <span class="text-sm font-normal text-muted-foreground">{{ categoryLinks.length }}</span>
+        <UBadge v-if="liveQuery.trim()" variant="subtle" color="primary" size="sm">即时过滤中</UBadge>
       </h2>
     </div>
 
@@ -29,8 +30,8 @@
     <EmptyState
       v-else-if="categoryLinks.length > 0"
       icon="i-lucide-search-x"
-      title="没有匹配的链接"
-      description="按 Enter 查看完整搜索结果"
+      title="当前分类没有匹配的链接"
+      description="按 Enter 走服务端全量搜索"
     />
 
     <EmptyState v-else icon="i-lucide-inbox" title="该分类下没有链接" />

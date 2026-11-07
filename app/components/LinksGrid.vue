@@ -32,13 +32,11 @@
       title="删除链接"
       confirm-label="确认删除"
       :loading="isDeleting"
+      :impact="deleteImpact"
+      irreversible
       @update:open="(v) => { if (!v) deleteTargetId = null }"
       @confirm="confirmDelete"
-    >
-      <p class="text-sm text-muted-foreground">
-        确定要删除这个链接吗？<span class="mt-2 block text-danger">此操作不可撤销。</span>
-      </p>
-    </ConfirmDialog>
+    />
   </div>
 </template>
 
@@ -66,6 +64,12 @@ const { notify } = useDataSync();
 const items = ref<LinkType[]>([...props.links]);
 const deleteTargetId = ref<string | null>(null);
 const isDeleting = ref(false);
+
+/** 删除影响范围：给出标题，让用户确认删的是哪一个（列表里可能有同名链接） */
+const deleteImpact = computed(() => {
+  const target = items.value.find((l) => l.id === deleteTargetId.value);
+  return target ? [`将删除「${target.title}」`] : [];
+});
 
 watch(
   () => props.links,

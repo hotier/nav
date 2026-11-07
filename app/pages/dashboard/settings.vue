@@ -23,15 +23,27 @@
           type="button"
           class="flex items-center gap-3 rounded-xl border p-4 text-left transition-colors"
           :class="theme === option.value
-            ? 'border-primary bg-primary/5 text-primary'
-            : 'border-border text-muted-foreground hover:bg-muted'"
+            ? 'border-primary bg-primary/5'
+            : 'border-border hover:bg-muted'"
           @click="setTheme(option.value)"
         >
-          <UIcon :name="option.icon" class="h-5 w-5" />
-          <div>
-            <p class="text-sm font-medium">{{ option.label }}</p>
-            <p class="text-xs">{{ option.description }}</p>
+          <span
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+            :class="theme === option.value ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'"
+          >
+            <UIcon :name="option.icon" class="h-5 w-5" />
+          </span>
+          <div class="min-w-0">
+            <p class="text-sm font-medium" :class="theme === option.value ? 'text-primary' : 'text-foreground'">
+              {{ option.label }}
+            </p>
+            <p class="text-xs text-muted-foreground">{{ option.description }}</p>
           </div>
+          <UIcon
+            v-if="theme === option.value"
+            name="i-lucide-check"
+            class="ml-auto h-4 w-4 shrink-0 text-primary"
+          />
         </button>
       </div>
 
@@ -65,12 +77,22 @@
           </span>
           <div>
             <h2 class="font-semibold text-foreground">快捷键</h2>
-            <p class="text-sm text-muted-foreground">在首页快速开始搜索</p>
+            <p class="text-sm text-muted-foreground">减少鼠标操作</p>
           </div>
         </div>
-        <div class="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
-          <span class="text-muted-foreground">聚焦搜索框</span>
-          <UKbd>/</UKbd>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-2.5">
+            <span class="text-muted-foreground">聚焦搜索框</span>
+            <UKbd>/</UKbd>
+          </div>
+          <div class="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-2.5">
+            <span class="text-muted-foreground">打开命令面板</span>
+            <UKbd>Ctrl K</UKbd>
+          </div>
+          <div class="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-4 py-2.5">
+            <span class="text-muted-foreground">搜索结果页清空关键词</span>
+            <UKbd>Esc</UKbd>
+          </div>
         </div>
       </section>
 
@@ -108,7 +130,7 @@
 <script setup lang="ts">
 definePageMeta({ middleware: "auth", layout: "dashboard" });
 
-const toast = useToast();
+const toast = useAppToast();
 const { theme, setTheme } = useTheme();
 const { accent, setAccent } = useAccent();
 
@@ -124,7 +146,7 @@ async function refreshAll() {
   refreshing.value = true;
   try {
     await useQueryCache().invalidateQueries();
-    toast.add({ title: "数据已刷新", icon: "i-lucide-check" });
+    toast.success("数据已刷新");
   } finally {
     refreshing.value = false;
   }

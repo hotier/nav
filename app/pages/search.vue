@@ -1,33 +1,44 @@
 <template>
   <div>
     <div class="mb-6">
-      <h2 class="text-2xl font-bold text-foreground font-display">
+      <h2 class="flex items-baseline gap-2 text-2xl font-bold text-foreground font-display">
         搜索结果
-        <span v-if="query" class="ml-2 text-sm font-normal text-muted-foreground">({{ links.length }})</span>
+        <span v-if="query && !pending" class="text-sm font-normal text-muted-foreground">
+          {{ links.length }} 条
+        </span>
       </h2>
     </div>
 
-    <div v-if="query" class="mb-6 rounded-2xl border border-border bg-card/80 p-4 backdrop-blur-xl">
+    <div v-if="query" class="mb-6 rounded-2xl border border-border bg-card/80 px-4 py-3 backdrop-blur-xl">
       <p class="text-sm text-muted-foreground">
-        关键词: <span class="font-medium text-primary">"{{ query }}"</span>
+        关键词 <span class="font-medium text-primary">「{{ query }}」</span>
       </p>
-      <p class="mt-1 text-xs text-muted-foreground">
-        找到 {{ links.length }} 个相关链接
-        <span v-if="pending" class="ml-2 inline-block animate-pulse">正在搜索...</span>
+      <p class="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <template v-if="pending">
+          <UIcon name="i-lucide-loader-circle" class="h-3.5 w-3.5 animate-spin" />
+          正在搜索…
+        </template>
+        <template v-else>
+          服务端全量搜索命中 {{ links.length }} 个链接
+          <UKbd size="sm">Esc</UKbd>
+          <span>清空关键词</span>
+        </template>
       </p>
     </div>
 
-    <div v-if="!query" class="flex flex-col items-center justify-center py-24 text-center">
-      <UIcon name="i-lucide-search" class="mb-4 h-12 w-12 text-muted-foreground/50" />
-      <p class="text-lg font-semibold text-foreground">输入关键词搜索书签</p>
-      <p class="mt-1 text-sm text-muted-foreground">在上方搜索框中输入关键词并按回车</p>
-    </div>
+    <EmptyState
+      v-if="!query"
+      icon="i-lucide-search"
+      title="输入关键词搜索书签"
+      description="在上方搜索框输入后按 Enter，走服务端全量搜索"
+    />
 
-    <div v-else-if="!pending && links.length === 0" class="flex flex-col items-center justify-center py-24 text-center">
-      <UIcon name="i-lucide-search-x" class="mb-4 h-12 w-12 text-muted-foreground/50" />
-      <p class="text-lg font-semibold text-foreground">未找到相关链接</p>
-      <p class="mt-1 text-sm text-muted-foreground">尝试其他关键词</p>
-    </div>
+    <EmptyState
+      v-else-if="!pending && links.length === 0"
+      icon="i-lucide-search-x"
+      title="未找到相关链接"
+      description="尝试更短的关键词，或检查是否被可见性规则过滤"
+    />
 
     <LinksGrid
       v-else
@@ -44,6 +55,7 @@
 import type { Category, Link as LinkType, SessionUser } from "~~/shared/types";
 
 const route = useRoute();
+const router = useRouter();
 const requestFetch = useRequestFetch();
 
 useHead({ title: "搜索" });
@@ -69,9 +81,20 @@ const { data, status } = useQuery({
       [] as LinkType[],
     ),
 });
-const pending = computed(() => status.value === "pending");
 
+const pending = computed(() => status.value === "pending");
 const links = computed<LinkType[]>(() => data.value ?? []);
 const isAdmin = computed(() => nav.value?.user?.role === "admin");
 const categories = computed<Category[]>(() => nav.value?.categories ?? []);
+
+/** Esc 清空关键词回到空态（结果页是派生视图，不提供拖拽/编辑） */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && query.value) {
+    e.preventDefault();
+    router.push("/search");
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>

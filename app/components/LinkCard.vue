@@ -23,7 +23,7 @@
           alt=""
           class="h-6 w-6 flex-shrink-0 rounded-md object-cover border border-border/60 bg-muted/40"
           @error="faviconBroken = true"
-        />
+        >
         <div
           v-if="!link.favicon || faviconBroken"
           class="favicon-fallback h-6 w-6 flex-shrink-0 rounded-md flex items-center justify-center text-[10px] font-semibold"
@@ -52,7 +52,7 @@
 
         <button
           type="button"
-          class="flex-shrink-0 p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-colors opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
+          class="flex-shrink-0 p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
           title="复制链接"
           @click.stop="copyUrl"
         >
@@ -78,7 +78,7 @@
           alt=""
           class="h-9 w-9 sm:h-10 sm:w-10 rounded-xl object-cover border border-border/60 bg-muted/40"
           @error="faviconBroken = true"
-        />
+        >
         <div
           v-if="!link.favicon || faviconBroken"
           class="favicon-fallback h-9 w-9 sm:h-10 sm:w-10 rounded-xl flex items-center justify-center text-sm font-semibold"
@@ -117,7 +117,11 @@
         </p>
       </div>
 
-      <div class="flex-shrink-0 flex items-center gap-1 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+      <!--
+        移动端常显（无 hover 能力），桌面端 hover 才出现：
+        sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100
+      -->
+      <div class="flex-shrink-0 flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
         <button
           type="button"
           class="p-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
@@ -162,7 +166,7 @@
             <UIcon name="i-lucide-pin" class="h-4 w-4" />{{ link.isPinned ? "取消置顶" : "置顶" }}
           </button>
           <div class="my-1 h-px bg-border" />
-          <button type="button" class="menu-item text-danger hover:!text-danger" @click="run(() => emit('delete', link.id))">
+          <button type="button" class="menu-item text-error" @click="run(() => emit('delete', link.id))">
             <UIcon name="i-lucide-trash-2" class="h-4 w-4" />删除
           </button>
         </template>
@@ -181,7 +185,7 @@
   </UModal>
 
   <!-- 编辑 -->
-  <UModal v-model:open="editing" title="编辑链接">
+  <UModal v-model:open="editing" title="编辑链接" :ui="{ content: 'max-w-2xl' }">
     <template #body>
       <LinkForm
         :initial-data="{
@@ -325,10 +329,16 @@ async function handleEditSubmit(data: LinkFormData) {
   border-radius: 0.5rem;
   color: var(--color-muted-foreground);
   text-align: left;
+  font-size: 0.875rem;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 .menu-item:hover {
   background: var(--color-muted);
   color: var(--color-foreground);
+}
+/* 危险项（删除）：hover 时保持 error 语义色，不被通用 hover 覆盖 */
+.menu-item.text-error:hover {
+  background: color-mix(in oklab, var(--color-error, #ef4444) 10%, transparent);
+  color: var(--color-error, #ef4444);
 }
 </style>

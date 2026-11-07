@@ -62,7 +62,7 @@
             <span class="mt-1 text-xs text-muted-foreground">
               {{ file ? formatSize(file.size) : "支持 .html / .htm / .json，最大 8MB" }}
             </span>
-            <input type="file" accept=".html,.htm,.json,application/json,text/html" class="sr-only" @change="handleFileChange" />
+            <input type="file" accept=".html,.htm,.json,application/json,text/html" class="sr-only" @change="handleFileChange" >
           </label>
 
           <UFormField label="导入到分类">
@@ -72,7 +72,7 @@
             </p>
           </UFormField>
 
-          <div v-if="importResult" class="rounded-xl border px-3 py-2 text-sm" :class="importResult.error ? 'border-error/30 bg-error/5 text-error' : 'border-success/30 bg-success/5 text-success-muted-foreground'">
+          <div v-if="importResult" class="rounded-xl border px-3 py-2 text-sm" :class="importResult.error ? 'border-error/30 bg-error/5 text-error' : 'border-success/30 bg-success/5 text-success'">
             {{ importResult.message }}
           </div>
 
@@ -103,7 +103,7 @@ import type { Category } from "~~/shared/types";
 definePageMeta({ middleware: "auth", layout: "dashboard" });
 
 const requestFetch = useRequestFetch();
-const toast = useToast();
+const toast = useAppToast();
 const { notify } = useDataSync();
 
 const formatItems = [
@@ -141,12 +141,9 @@ async function handleExport() {
     anchor.remove();
     URL.revokeObjectURL(url);
 
-    toast.add({ title: "导出完成", icon: "i-lucide-check" });
+    toast.success("导出完成");
   } catch (error) {
-    toast.add({
-      title: error instanceof Error ? error.message : "导出失败",
-      color: "error",
-    });
+    toast.error(error instanceof Error ? error.message : "导出失败");
   } finally {
     exporting.value = false;
   }
@@ -195,7 +192,7 @@ function handleDrop(event: DragEvent) {
 function setFile(selected: File) {
   importResult.value = null;
   if (selected.size > MAX_SIZE) {
-    toast.add({ title: "文件超过 8MB 限制", color: "error" });
+    toast.error("文件超过 8MB 限制");
     return;
   }
   file.value = selected;
@@ -243,7 +240,7 @@ async function handleImport() {
       ? `${result.message}，跳过 ${result.skipped} 个重复链接`
       : result.message;
     importResult.value = { message: detail };
-    toast.add({ title: "导入完成", icon: "i-lucide-check" });
+    toast.success("导入完成");
 
     file.value = null;
     notify("Link");
@@ -251,7 +248,7 @@ async function handleImport() {
   } catch (error) {
     const message = errorMessage(error, "导入失败");
     importResult.value = { message, error: true };
-    toast.add({ title: message, color: "error" });
+    toast.error(message);
   } finally {
     importing.value = false;
   }

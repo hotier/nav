@@ -3,7 +3,7 @@
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold text-foreground font-display">用户管理</h1>
-        <p class="mt-1 text-sm text-muted-foreground">共 {{ userRows.length }} 个用户</p>
+        <p class="mt-1 text-sm text-muted-foreground">共 {{ filteredRows.length }} 个用户<span v-if="search || roleFilter !== 'all'"> · 全部 {{ userRows.length }} 个</span></p>
       </div>
       <div class="flex items-center gap-2">
         <UButton
@@ -18,29 +18,51 @@
       </div>
     </div>
 
-    <div class="overflow-x-auto rounded-xl border border-border">
+    <div class="flex flex-wrap items-center gap-2">
+      <UInput
+        v-model="search"
+        icon="i-lucide-search"
+        placeholder="搜索用户名、邮箱或显示名称"
+        class="w-full sm:w-72"
+      />
+      <USelect v-model="roleFilter" :items="roleFilterItems" class="w-36" />
+      <UButton
+        v-if="search || roleFilter !== 'all'"
+        variant="ghost"
+        color="neutral"
+        size="sm"
+        icon="i-lucide-x"
+        @click="search = ''; roleFilter = 'all'"
+      >
+        清除筛选
+      </UButton>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl border border-border bg-card">
       <table class="w-full min-w-[720px] border-collapse text-left">
         <thead class="bg-muted/50 text-xs font-medium text-muted-foreground">
           <tr>
-            <th class="px-4 py-2.5">用户</th>
-            <th class="px-3 py-2.5">角色</th>
-            <th class="px-3 py-2.5">链接数</th>
-            <th class="hidden px-3 py-2.5 md:table-cell">注册时间</th>
-            <th class="px-3 py-2.5 text-right">操作</th>
+            <!-- 列宽策略与链接/分类管理页一致：用户列吃剩余宽度，其余列收缩到内容宽度 -->
+            <th class="w-full px-4 py-2.5">用户</th>
+            <th class="w-px whitespace-nowrap px-3 py-2.5">角色</th>
+            <th class="w-px whitespace-nowrap px-3 py-2.5 text-right">链接数</th>
+            <th class="hidden w-px whitespace-nowrap px-3 py-2.5 md:table-cell">注册时间</th>
+            <th class="w-px whitespace-nowrap px-3 py-2.5 text-right">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr
-            v-for="row in userRows"
+            v-for="row in filteredRows"
             :key="row.id"
             class="border-b border-border/60 transition-colors hover:bg-muted/40"
           >
-            <td class="px-4 py-3">
-              <div class="flex items-center gap-3">
+            <td class="w-full min-w-0 px-4 py-3">
+              <div class="flex min-w-0 items-center gap-3">
                 <UAvatar
                   :src="row.image ? proxyImageUrl(row.image, 96) : undefined"
                   :alt="row.name || row.username || 'U'"
                   size="sm"
+                  class="shrink-0"
                 />
                 <div class="min-w-0">
                   <div class="flex items-center gap-1.5">
@@ -53,7 +75,7 @@
                 </div>
               </div>
             </td>
-            <td class="px-3 py-3">
+            <td class="w-px whitespace-nowrap px-3 py-3">
               <div class="flex flex-wrap items-center gap-1">
                 <UBadge :color="row.role === 'admin' ? 'primary' : 'neutral'" variant="subtle" size="sm">
                   {{ row.role === "admin" ? "管理员" : "普通用户" }}
@@ -61,11 +83,13 @@
                 <UBadge v-if="row.isSystemAdmin" color="warning" variant="subtle" size="sm">系统</UBadge>
               </div>
             </td>
-            <td class="px-3 py-3 text-sm text-muted-foreground">{{ row._count?.links ?? 0 }}</td>
-            <td class="hidden px-3 py-3 text-xs text-muted-foreground md:table-cell">
+            <td class="w-px whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums text-muted-foreground">
+              {{ row._count?.links ?? 0 }}
+            </td>
+            <td class="hidden w-px whitespace-nowrap px-3 py-3 text-xs tabular-nums text-muted-foreground md:table-cell">
               {{ formatDate(row.createdAt) }}
             </td>
-            <td class="px-3 py-3 text-right">
+            <td class="w-px whitespace-nowrap px-3 py-3 text-right">
               <UDropdownMenu :items="rowMenu(row)" :content="{ align: 'end' }">
                 <UButton
                   variant="ghost"
@@ -81,11 +105,17 @@
         </tbody>
       </table>
 
-      <div v-if="pending" class="flex items-center justify-center py-16 text-sm text-muted-foreground">
-        <UIcon name="i-lucide-loader-circle" class="mr-2 h-4 w-4 animate-spin" />
-        加载中…
+      <!-- 加载态：骨架行，与最终表格行高一致，避免内容跳动 -->
+      <div v-if="pending" class="space-y-2 p-3">
+        <USkeleton v-for="i in 6" :key="i" class="h-11 w-full rounded-lg" />
       </div>
-      <EmptyState v-else-if="userRows.length === 0" compact icon="i-lucide-users" title="还没有用户" />
+      <EmptyState
+        v-else-if="filteredRows.length === 0"
+        compact
+        icon="i-lucide-users"
+        :title="search || roleFilter !== 'all' ? '没有符合条件的用户' : '还没有用户'"
+        :description="search || roleFilter !== 'all' ? '调整筛选条件后重试' : ''"
+      />
     </div>
 
     <UModal v-model:open="createOpen" title="新建用户" :ui="{ content: 'max-w-lg' }">
@@ -141,20 +171,16 @@
       </template>
     </UModal>
 
-    <UModal v-model:open="deleteOpen" title="删除用户">
-      <template #body>
-        <p class="text-sm text-muted-foreground">
-          确定要删除用户「{{ deleteTarget?.name || deleteTarget?.username }}」吗？
-          <span class="mt-1 block text-error">该用户的链接和分类会一并删除，此操作不可撤销。</span>
-        </p>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <UButton variant="ghost" color="neutral" @click="deleteOpen = false">取消</UButton>
-          <UButton color="error" :loading="submitting" @click="confirmDelete">确认删除</UButton>
-        </div>
-      </template>
-    </UModal>
+    <ConfirmDialog
+      :open="deleteOpen"
+      title="删除用户"
+      confirm-label="确认删除"
+      :loading="submitting"
+      :impact="deleteImpact"
+      irreversible
+      @update:open="(v) => { if (!v) deleteTarget = null }"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -177,7 +203,7 @@ interface UserRow {
 }
 
 const requestFetch = useRequestFetch();
-const toast = useToast();
+const toast = useAppToast();
 const { notify } = useDataSync();
 
 const queryCache = useQueryCache();
@@ -202,6 +228,26 @@ const refreshUsers = () => queryCache.invalidateQueries({ key: ["users"] });
 
 const userRows = computed(() => users.value ?? []);
 const submitting = ref(false);
+
+const search = ref("");
+const roleFilter = ref("all");
+
+const roleFilterItems = [
+  { label: "全部角色", value: "all" },
+  { label: "管理员", value: "admin" },
+  { label: "普通用户", value: "user" },
+];
+
+/** 用户列表过滤：关键词命中用户名/邮箱/显示名，角色下拉单独过滤 */
+const filteredRows = computed(() => {
+  const keyword = search.value.trim().toLowerCase();
+  return userRows.value.filter((row) => {
+    if (roleFilter.value !== "all" && row.role !== roleFilter.value) return false;
+    if (!keyword) return true;
+    const haystack = `${row.name ?? ""} ${row.username ?? ""} ${row.email ?? ""}`.toLowerCase();
+    return haystack.includes(keyword);
+  });
+});
 
 const roleItems = [
   { label: "普通用户", value: "user" },
@@ -256,12 +302,12 @@ async function handleCreate() {
         role: createForm.role,
       },
     });
-    toast.add({ title: "用户已创建", icon: "i-lucide-check" });
+    toast.success("用户已创建");
     createOpen.value = false;
     await refreshUsers();
     notify("User");
   } catch (error) {
-    toast.add({ title: errorMessage(error, "创建失败"), color: "error" });
+    toast.error(errorMessage(error, "创建失败"));
   } finally {
     submitting.value = false;
   }
@@ -270,11 +316,11 @@ async function handleCreate() {
 async function changeRole(row: UserRow, role: "admin" | "user") {
   try {
     await $fetch(`/api/users/${row.id}`, { method: "PATCH", body: { role } });
-    toast.add({ title: role === "admin" ? "已设为管理员" : "已设为普通用户", icon: "i-lucide-check" });
+    toast.success(role === "admin" ? "已设为管理员" : "已设为普通用户");
     await refreshUsers();
     notify("User");
   } catch (error) {
-    toast.add({ title: errorMessage(error, "操作失败"), color: "error" });
+    toast.error(errorMessage(error, "操作失败"));
   }
 }
 
@@ -294,11 +340,11 @@ async function handleReset() {
   submitting.value = true;
   try {
     await $fetch(`/api/users/${target.id}`, { method: "PATCH", body: { password: newPassword.value } });
-    toast.add({ title: `已重置 ${target.name || target.username} 的密码`, icon: "i-lucide-check" });
+    toast.success(`已重置 ${target.name || target.username} 的密码`);
     resetOpen.value = false;
     notify("User");
   } catch (error) {
-    toast.add({ title: errorMessage(error, "重置失败"), color: "error" });
+    toast.error(errorMessage(error, "重置失败"));
   } finally {
     submitting.value = false;
   }
@@ -311,6 +357,18 @@ const deleteOpen = computed({
     if (!value) deleteTarget.value = null;
   },
 });
+/** 删除影响范围：用户身份 + 归属数据量，逐条列出 */
+const deleteImpact = computed(() => {
+  const target = deleteTarget.value;
+  if (!target) return [];
+  const label = target.name || target.username || target.email || target.id;
+  const items = [`将删除用户「${label}」`];
+  const linkCount = target._count?.links ?? 0;
+  if (linkCount > 0) items.push(`该用户的 ${linkCount} 个链接会一并删除`);
+  items.push("该用户创建的分类会一并删除");
+  if (target.isSystemAdmin) items.push("该账号是系统管理员");
+  return items;
+});
 
 function requestDelete(row: UserRow) {
   deleteTarget.value = row;
@@ -322,12 +380,12 @@ async function confirmDelete() {
   submitting.value = true;
   try {
     await $fetch(`/api/users/${target.id}`, { method: "DELETE" });
-    toast.add({ title: "用户已删除", icon: "i-lucide-check" });
+    toast.success("用户已删除");
     deleteTarget.value = null;
     await refreshUsers();
     notify("User");
   } catch (error) {
-    toast.add({ title: errorMessage(error, "删除失败"), color: "error" });
+    toast.error(errorMessage(error, "删除失败"));
   } finally {
     submitting.value = false;
   }

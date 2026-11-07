@@ -19,7 +19,7 @@
               :src="previewImage"
               alt=""
               class="h-full w-full object-cover"
-            />
+            >
             <span v-else class="text-xl font-semibold text-primary">{{ initial }}</span>
           </span>
           <div>
@@ -92,7 +92,7 @@ interface Profile {
 }
 
 const requestFetch = useRequestFetch();
-const toast = useToast();
+const toast = useAppToast();
 const { notify } = useDataSync();
 const { fetch: refreshUserSession, clear } = useUserSession();
 
@@ -147,7 +147,7 @@ async function handleSaveProfile() {
   if (profileForm.image !== (profile.value?.image ?? "")) body.image = profileForm.image;
 
   if (Object.keys(body).length === 0) {
-    toast.add({ title: "没有修改任何信息", color: "warning" });
+    toast.warning("没有修改任何信息");
     return;
   }
 
@@ -158,9 +158,9 @@ async function handleSaveProfile() {
     await queryCache.invalidateQueries({ key: qk.session() });
     await queryCache.invalidateQueries({ key: qk.account() });
     notify("User");
-    toast.add({ title: "个人信息已更新", icon: "i-lucide-check" });
+    toast.success("个人信息已更新");
   } catch (error) {
-    toast.add({ title: errorMessage(error, "更新失败"), color: "error" });
+    toast.error(errorMessage(error, "更新失败"));
   } finally {
     savingProfile.value = false;
   }
@@ -170,15 +170,15 @@ const changingPassword = ref(false);
 
 async function handleChangePassword() {
   if (!passwordForm.currentPassword) {
-    toast.add({ title: "请输入当前密码", color: "error" });
+    toast.error("请输入当前密码");
     return;
   }
   if (passwordForm.newPassword.length < 6) {
-    toast.add({ title: "新密码至少 6 位", color: "error" });
+    toast.error("新密码至少 6 位");
     return;
   }
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    toast.add({ title: "两次输入的新密码不一致", color: "error" });
+    toast.error("两次输入的新密码不一致");
     return;
   }
 
@@ -191,7 +191,7 @@ async function handleChangePassword() {
         newPassword: passwordForm.newPassword,
       },
     });
-    toast.add({ title: "密码已修改，请重新登录", icon: "i-lucide-check" });
+    toast.success("密码已修改，请重新登录");
     passwordForm.currentPassword = "";
     passwordForm.newPassword = "";
     passwordForm.confirmPassword = "";
@@ -205,7 +205,7 @@ async function handleChangePassword() {
       await navigateTo("/login");
     }, 1200);
   } catch (error) {
-    toast.add({ title: errorMessage(error, "修改密码失败"), color: "error" });
+    toast.error(errorMessage(error, "修改密码失败"));
   } finally {
     changingPassword.value = false;
   }

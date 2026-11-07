@@ -5,6 +5,7 @@
         <h1 class="text-2xl font-bold text-foreground font-display">分类管理</h1>
         <p class="mt-1 text-sm text-muted-foreground">
           共 {{ topCategories.length }} 个顶级分类<span v-if="childCount"> · {{ childCount }} 个子分类</span>
+          <span v-if="search || visibility !== 'all'"> · 筛选出 {{ rows.length }} 行</span>
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -40,15 +41,19 @@
       </UButton>
     </div>
 
-    <div class="overflow-x-auto rounded-xl border border-border">
+    <div class="overflow-x-auto rounded-2xl border border-border bg-card">
       <table class="w-full min-w-[640px] border-collapse text-left">
         <thead class="bg-muted/50 text-xs font-medium text-muted-foreground">
           <tr>
-            <th class="px-4 py-2.5">分类</th>
-            <th class="px-3 py-2.5">链接数</th>
-            <th v-if="isAdmin" class="hidden px-3 py-2.5 lg:table-cell">创建者</th>
-            <th class="px-3 py-2.5">可见性</th>
-            <th class="px-3 py-2.5 text-right">操作</th>
+            <!--
+              列宽策略与链接管理页一致：只有「分类」列吃剩余宽度，
+              其余列 w-px + whitespace-nowrap 收缩到内容宽度。
+            -->
+            <th class="w-full px-4 py-2.5">分类</th>
+            <th class="w-px whitespace-nowrap px-3 py-2.5 text-right">链接数</th>
+            <th v-if="isAdmin" class="hidden w-px whitespace-nowrap px-3 py-2.5 lg:table-cell">创建者</th>
+            <th class="w-px whitespace-nowrap px-3 py-2.5">可见性</th>
+            <th class="w-px whitespace-nowrap px-3 py-2.5 text-right">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -57,11 +62,11 @@
             :key="row.id"
             class="border-b border-border/60 transition-colors hover:bg-muted/40"
           >
-            <td class="px-4 py-3">
-              <div class="flex items-center gap-2" :class="row.depth === 1 ? 'pl-7' : ''">
+            <td class="w-full min-w-0 px-4 py-3">
+              <div class="flex min-w-0 items-center gap-2" :class="row.depth === 1 ? 'pl-7' : ''">
                 <span
                   v-if="row.depth === 1"
-                  class="h-3 w-3 rounded-bl border-b border-l border-border"
+                  class="h-3 w-3 shrink-0 rounded-bl border-b border-l border-border"
                   aria-hidden="true"
                 />
                 <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-primary">
@@ -75,11 +80,15 @@
                 </div>
               </div>
             </td>
-            <td class="px-3 py-3 text-sm text-muted-foreground">{{ row.linkCount }}</td>
-            <td v-if="isAdmin" class="hidden px-3 py-3 text-xs text-muted-foreground lg:table-cell">
-              {{ row.userId === currentUserId ? "我" : row.ownerName }}
+            <td class="w-px whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums text-muted-foreground">
+              {{ row.linkCount }}
             </td>
-            <td class="px-3 py-3">
+            <td v-if="isAdmin" class="hidden w-px whitespace-nowrap px-3 py-3 text-xs text-muted-foreground lg:table-cell">
+              <span class="block max-w-[8rem] truncate">
+                {{ row.userId === currentUserId ? "我" : row.ownerName }}
+              </span>
+            </td>
+            <td class="w-px whitespace-nowrap px-3 py-3">
               <div class="flex flex-wrap items-center gap-1">
                 <UBadge v-if="row.isHidden" color="error" variant="subtle" size="sm">已隐藏</UBadge>
                 <UBadge :color="row.isPublic ? 'success' : 'warning'" variant="subtle" size="sm">
@@ -87,7 +96,7 @@
                 </UBadge>
               </div>
             </td>
-            <td class="px-3 py-3">
+            <td class="w-px whitespace-nowrap px-3 py-3 text-right">
               <div class="flex items-center justify-end gap-0.5">
                 <UTooltip v-if="row.depth === 0 && canManage(row)" text="添加子分类">
                   <UButton
@@ -128,9 +137,9 @@
         </tbody>
       </table>
 
-      <div v-if="pending" class="flex items-center justify-center py-16 text-sm text-muted-foreground">
-        <UIcon name="i-lucide-loader-circle" class="mr-2 h-4 w-4 animate-spin" />
-        加载中…
+      <!-- 加载态：骨架行，与最终表格行高一致，避免内容跳动 -->
+      <div v-if="pending" class="space-y-2 p-3">
+        <USkeleton v-for="i in 6" :key="i" class="h-11 w-full rounded-lg" />
       </div>
       <EmptyState
         v-else-if="rows.length === 0"
@@ -195,23 +204,16 @@
       </template>
     </UModal>
 
-    <UModal v-model:open="deleteOpen" title="删除分类">
-      <template #body>
-        <p class="text-sm text-muted-foreground">
-          确定要删除「{{ deleteTarget?.name }}」吗？
-          <span class="mt-1 block text-error">分类下的链接会一并删除，此操作不可撤销。</span>
-        </p>
-        <p v-if="deleteTarget?.childCount" class="mt-2 text-xs text-warning">
-          其中包含 {{ deleteTarget.childCount }} 个子分类，会一并删除。
-        </p>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <UButton variant="ghost" color="neutral" @click="deleteOpen = false">取消</UButton>
-          <UButton color="error" :loading="deleting" @click="confirmDelete">确认删除</UButton>
-        </div>
-      </template>
-    </UModal>
+    <ConfirmDialog
+      :open="deleteOpen"
+      title="删除分类"
+      confirm-label="确认删除"
+      :loading="deleting"
+      :impact="deleteImpact"
+      irreversible
+      @update:open="(v) => { if (!v) deleteTarget = null }"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -228,7 +230,7 @@ interface RowCategory extends Category {
 }
 
 const requestFetch = useRequestFetch();
-const toast = useToast();
+const toast = useAppToast();
 const { notify } = useDataSync();
 
 const queryCache = useQueryCache();
@@ -369,7 +371,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 async function handleSubmit() {
   if (!form.name.trim()) {
-    toast.add({ title: "请输入分类名称", color: "error" });
+    toast.error("请输入分类名称");
     return;
   }
 
@@ -385,17 +387,17 @@ async function handleSubmit() {
 
     if (editing.value) {
       await $fetch(`/api/categories/${editing.value.id}`, { method: "PUT", body });
-      toast.add({ title: "分类已更新", icon: "i-lucide-check" });
+      toast.success("分类已更新");
     } else {
       await $fetch("/api/categories", { method: "POST", body });
-      toast.add({ title: "分类已创建", icon: "i-lucide-check" });
+      toast.success("分类已创建");
     }
 
     formOpen.value = false;
     await refreshCategories();
     notify("Category");
   } catch (error) {
-    toast.add({ title: errorMessage(error, "保存失败"), color: "error" });
+    toast.error(errorMessage(error, "保存失败"));
   } finally {
     submitting.value = false;
   }
@@ -407,6 +409,15 @@ const deleteOpen = computed({
   set: (value: boolean) => {
     if (!value) deleteTarget.value = null;
   },
+});
+/** 删除影响范围：名称 + 链接数 + 子分类数，逐条列出，避免用户对级联删除无感知 */
+const deleteImpact = computed(() => {
+  const target = deleteTarget.value;
+  if (!target) return [];
+  const items = [`将删除分类「${target.name}」`];
+  if (target.linkCount > 0) items.push(`该分类下的 ${target.linkCount} 个链接会一并删除`);
+  if (target.childCount > 0) items.push(`包含 ${target.childCount} 个子分类，会一并删除`);
+  return items;
 });
 const deleting = ref(false);
 
@@ -420,12 +431,12 @@ async function confirmDelete() {
   deleting.value = true;
   try {
     await $fetch(`/api/categories/${category.id}`, { method: "DELETE" });
-    toast.add({ title: "分类已删除", icon: "i-lucide-check" });
+    toast.success("分类已删除");
     deleteTarget.value = null;
     await refreshCategories();
     notify("Category");
   } catch (error) {
-    toast.add({ title: errorMessage(error, "删除失败"), color: "error" });
+    toast.error(errorMessage(error, "删除失败"));
   } finally {
     deleting.value = false;
   }

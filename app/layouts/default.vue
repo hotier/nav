@@ -14,37 +14,34 @@
           </div>
 
           <!-- Center - Search -->
-          <div class="flex-1 max-w-xl px-8 hidden sm:block">
-            <div class="flex items-center h-10 rounded-xl border border-border bg-muted/80 text-foreground focus-within:bg-background focus-within:border-ring focus-within:ring-1 focus-within:ring-ring transition-all overflow-hidden">
-              <svg class="ml-3 h-4 w-4 text-muted-foreground shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
+          <div class="hidden flex-1 px-4 sm:block">
+            <div class="mx-auto flex max-w-3xl items-center gap-2">
+              <UInput
                 ref="searchRef"
                 v-model="searchQuery"
-                type="text"
+                icon="i-lucide-search"
                 placeholder="搜索书签… (按 / 快速聚焦)"
-                class="flex-1 min-w-0 h-full bg-transparent px-3 text-sm placeholder:text-muted-foreground focus:outline-none"
+                class="flex-1"
                 @keydown.enter="handleSearch"
-              />
-              <button
-                type="button"
-                class="hidden md:inline-flex items-center self-center px-2"
-                title="打开命令面板"
-                @click="paletteOpen = true"
               >
-                <UKbd size="sm">Ctrl K</UKbd>
-              </button>
-              <button
-                type="button"
+                <template #trailing>
+                  <UKbd size="sm" class="cursor-pointer" @click="paletteOpen = true">Ctrl K</UKbd>
+                </template>
+              </UInput>
+              <UButton
                 :disabled="!searchQuery.trim()"
-                class="self-stretch flex items-center gap-1 px-3.5 bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                icon="i-lucide-search"
+                class="shrink-0"
                 @click="handleSearch"
               >
-                <UIcon name="i-lucide-search" class="h-3.5 w-3.5" />
-                <span>搜索</span>
-              </button>
+                搜索
+              </UButton>
             </div>
+            <!-- 模式提示：输入即时过滤当前列表，Enter 才走服务端全量搜索 -->
+            <p class="mx-auto mt-1 max-w-3xl px-1 text-[11px] text-muted-foreground">
+              <template v-if="searchQuery.trim()">即时过滤当前列表 · <UKbd size="sm">Enter</UKbd> 搜索全部</template>
+              <template v-else>输入即时过滤 · <UKbd size="sm">Enter</UKbd> 服务端全量搜索</template>
+            </p>
           </div>
 
           <!-- Right - Actions -->
@@ -54,7 +51,7 @@
             <UDropdownMenu v-if="user" :items="userMenuItems" :content="{ align: 'end' }">
               <div :class="user.role === 'admin' ? 'admin-avatar-ring' : 'user-avatar-ring'">
                 <button type="button" class="flex items-center justify-center w-9 h-9 rounded-full overflow-hidden cursor-pointer shadow-lg hover:shadow-xl transition-all" title="用户菜单">
-                  <img v-if="user.image" :src="proxyImageUrl(user.image, 128)" alt="" class="h-full w-full object-cover" />
+                  <img v-if="user.image" :src="proxyImageUrl(user.image, 128)" alt="" class="h-full w-full object-cover" >
                   <span v-else class="h-full w-full flex items-center justify-center bg-gradient-to-br from-primary to-sky-500 text-white font-medium text-sm">
                     {{ (user.name || user.email || "U").charAt(0).toUpperCase() }}
                   </span>
@@ -74,8 +71,8 @@
               class="lg:hidden inline-flex items-center justify-center h-9 w-9 rounded-xl text-muted-foreground hover:bg-muted"
               @click="mobileMenuOpen = !mobileMenuOpen"
             >
-              <UIcon name="i-lucide-x" v-if="mobileMenuOpen" class="h-5 w-5" />
-              <UIcon name="i-lucide-menu" v-else class="h-5 w-5" />
+              <UIcon v-if="mobileMenuOpen" name="i-lucide-x" class="h-5 w-5" />
+              <UIcon v-else name="i-lucide-menu" class="h-5 w-5" />
             </button>
           </div>
         </div>
@@ -83,12 +80,12 @@
     </header>
 
     <div class="flex flex-1">
-      <!-- Sidebar -->
-      <aside class="w-60 flex-shrink-0 hidden lg:block bg-card border-r border-border p-4 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto">
-        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-2 font-display">
+      <!-- Sidebar：与后台侧栏同宽同密度（w-52 / 36px 行高），两侧切换时视觉连续 -->
+      <aside class="sticky top-16 hidden h-[calc(100vh-4rem)] w-52 shrink-0 overflow-y-auto border-r border-border bg-card px-3 py-4 lg:block">
+        <h3 class="px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground font-display">
           分类导航
         </h3>
-        <nav class="space-y-1">
+        <nav class="mt-2 space-y-0.5">
           <NavItem to="/" label="全部链接" icon="i-lucide-house" :active="isHome" />
           <div v-for="category in categories" :key="category.id">
             <NavItem
@@ -98,7 +95,7 @@
               :icon="folderIcon"
               :active="route.path === `/category/${category.slug}`"
             />
-            <div v-if="category.children?.length" class="ml-4 mt-1 space-y-1">
+            <div v-if="category.children?.length" class="ml-3 mt-0.5 space-y-0.5">
               <NavItem
                 v-for="child in category.children"
                 v-show="child.slug"
@@ -113,8 +110,8 @@
         </nav>
       </aside>
 
-      <!-- Main -->
-      <main class="flex-1 px-8 pt-8 flex flex-col min-w-0">
+      <!-- Main：留白与后台对齐（px-4 / sm:px-6 / lg:px-8），窄屏不再被 32px 挤掉内容宽度 -->
+      <main class="flex min-w-0 flex-1 flex-col px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
         <div class="flex-1">
           <slot />
         </div>
@@ -122,41 +119,51 @@
       </main>
     </div>
 
-    <!-- Mobile menu -->
-    <div v-if="mobileMenuOpen" class="fixed inset-0 z-40 bg-black/50 lg:hidden" @click.self="mobileMenuOpen = false">
-      <div class="absolute right-0 top-0 h-full w-64 bg-card shadow-xl overflow-y-auto">
-        <div class="p-4 border-b border-border flex items-center justify-between">
-          <span class="font-bold text-primary">菜单</span>
-          <button type="button" class="p-1 rounded-lg hover:bg-muted" @click="mobileMenuOpen = false">
-            <UIcon name="i-lucide-x" class="h-5 w-5" />
-          </button>
-        </div>
-        <nav class="p-4 space-y-1 text-sm">
-          <NuxtLink to="/" class="mobile-link" @click="mobileMenuOpen = false">
+    <!-- Mobile menu：统一用 USlideover（自带焦点陷阱、ESC 关闭、滚动锁） -->
+    <USlideover v-model:open="mobileMenuOpen" title="分类导航" side="right">
+      <template #body>
+        <nav class="space-y-1 text-sm">
+          <NuxtLink
+            to="/"
+            class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
+            :class="isHome ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+            @click="mobileMenuOpen = false"
+          >
             <UIcon name="i-lucide-house" class="h-4 w-4" />全部链接
           </NuxtLink>
           <template v-for="cat in categories" :key="cat.id">
-            <NuxtLink v-if="cat.slug" :to="`/category/${cat.slug}`" class="mobile-link" @click="mobileMenuOpen = false">
-              <DynamicIcon :name="cat.icon || 'Folder'" class="h-4 w-4" />{{ cat.name }}
+            <NuxtLink
+              v-if="cat.slug"
+              :to="`/category/${cat.slug}`"
+              class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
+              :class="route.path === `/category/${cat.slug}` ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+              @click="mobileMenuOpen = false"
+            >
+              <DynamicIcon :name="cat.icon || 'Folder'" class-name="h-4 w-4" />{{ cat.name }}
             </NuxtLink>
             <NuxtLink
               v-for="child in cat.children || []"
               v-show="child.slug"
               :key="child.id"
               :to="`/category/${child.slug}`"
-              class="mobile-link pl-10"
+              class="flex items-center gap-3 rounded-lg py-2.5 pl-9 pr-3 text-sm transition-colors"
+              :class="route.path === `/category/${child.slug}` ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
               @click="mobileMenuOpen = false"
             >
-              <DynamicIcon :name="child.icon || 'Folder'" class="h-4 w-4" />{{ child.name }}
+              <DynamicIcon :name="child.icon || 'Folder'" class-name="h-4 w-4" />{{ child.name }}
             </NuxtLink>
           </template>
-          <hr class="my-4 border-border" />
-          <NuxtLink to="/dashboard" class="mobile-link" @click="mobileMenuOpen = false">
+          <div class="my-3 h-px bg-border" />
+          <NuxtLink
+            to="/dashboard"
+            class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            @click="mobileMenuOpen = false"
+          >
             <UIcon name="i-lucide-layout-dashboard" class="h-4 w-4" />管理后台
           </NuxtLink>
         </nav>
-      </div>
-    </div>
+      </template>
+    </USlideover>
 
     <CommandPalette />
   </div>
@@ -241,18 +248,3 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeydown);
 });
 </script>
-
-<style scoped>
-.mobile-link {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  border-radius: 0.5rem;
-  font-weight: 500;
-  color: var(--color-muted-foreground);
-}
-.mobile-link:hover {
-  background: var(--color-muted);
-}
-</style>

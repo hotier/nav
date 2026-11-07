@@ -7,27 +7,27 @@
       </p>
     </div>
 
-    <div v-if="pending" class="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-      <USkeleton v-for="i in 4" :key="i" class="h-40 rounded-2xl" />
+    <div v-if="pending" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <USkeleton v-for="i in 4" :key="i" class="h-36 rounded-2xl" />
     </div>
 
-    <div v-else class="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+    <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div
         v-for="card in cards"
         :key="card.label"
-        class="rounded-2xl border border-border bg-card p-6 transition-shadow hover:shadow-lg"
+        class="rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/30"
       >
-        <div class="mb-4 flex items-start justify-between">
-          <span class="flex h-12 w-12 items-center justify-center rounded-xl" :class="card.iconClass">
-            <UIcon :name="card.icon" class="h-6 w-6" />
+        <div class="mb-3 flex items-start justify-between">
+          <span class="flex h-10 w-10 items-center justify-center rounded-xl" :class="card.iconClass">
+            <UIcon :name="card.icon" class="h-5 w-5" />
           </span>
           <UBadge variant="subtle" :color="card.color" size="sm">{{ card.tag }}</UBadge>
         </div>
-        <div class="text-3xl font-bold tracking-tight font-display">
+        <div class="text-2xl font-bold tabular-nums tracking-tight font-display">
           {{ card.value }}
         </div>
-        <p class="mt-1 text-sm text-muted-foreground">{{ card.label }}</p>
-        <div class="mt-4 border-t border-border/60 pt-4 text-xs text-muted-foreground">
+        <p class="mt-0.5 text-sm text-muted-foreground">{{ card.label }}</p>
+        <div class="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
           {{ card.hint }}
         </div>
       </div>
@@ -43,18 +43,20 @@
           v-for="action in actions"
           :key="action.to"
           :to="action.to"
-          class="group rounded-2xl border border-border bg-card p-6 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+          class="group rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/30 hover:bg-primary/[0.03]"
         >
-          <div class="flex items-start gap-4">
-            <span class="flex h-12 w-12 items-center justify-center rounded-xl" :class="action.iconClass">
-              <UIcon :name="action.icon" class="h-6 w-6" />
+          <div class="flex items-start gap-3">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" :class="action.iconClass">
+              <UIcon :name="action.icon" class="h-5 w-5" />
             </span>
-            <div>
-              <h3 class="font-semibold text-foreground group-hover:text-primary">{{ action.title }}</h3>
-              <p class="mt-1 text-sm text-muted-foreground">{{ action.description }}</p>
+            <div class="min-w-0">
+              <h3 class="font-semibold text-foreground transition-colors group-hover:text-primary">
+                {{ action.title }}
+              </h3>
+              <p class="mt-0.5 text-sm text-muted-foreground">{{ action.description }}</p>
             </div>
           </div>
-          <div class="mt-4 flex items-center text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+          <div class="mt-3 flex items-center text-sm font-medium text-primary">
             {{ action.cta }}
             <UIcon name="i-lucide-chevron-right" class="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
           </div>

@@ -4,7 +4,7 @@
       <UCommandPalette
         :groups="groups"
         :close="false"
-        placeholder="搜索链接或页面…"
+        placeholder="搜索链接、分类或页面…"
       />
     </template>
   </UModal>
@@ -17,6 +17,8 @@ import type { Category, Link as LinkType, SessionUser } from "~~/shared/types";
 const open = useState("command-palette-open", () => false);
 const requestFetch = useRequestFetch();
 const router = useRouter();
+const colorMode = useColorMode();
+const { cycle: cycleTheme } = useTheme();
 
 const { data: nav } = useQuery({
   key: qk.nav(),
@@ -53,10 +55,55 @@ function go(to: string) {
   router.push(to);
 }
 
+/** 扁平化分类（含子分类），供命令面板按分类跳转 */
+const flatCategories = computed(() => {
+  const out: Array<{ id: string; name: string; slug: string | null; icon: string | null; depth: number }> = [];
+  for (const cat of nav.value?.categories ?? []) {
+    out.push({ id: cat.id, name: cat.name, slug: cat.slug, icon: cat.icon, depth: 0 });
+    for (const child of cat.children ?? []) {
+      out.push({ id: child.id, name: child.name, slug: child.slug, icon: child.icon, depth: 1 });
+    }
+  }
+  return out;
+});
+
 const groups = computed<CommandPaletteGroup[]>(() => {
   const user = nav.value?.user ?? null;
   const links = linkData.value?.data ?? [];
   const result: CommandPaletteGroup[] = [];
+
+  // 快捷操作：不依赖数据，永远可用
+  const actions: CommandPaletteItem[] = [
+    {
+      label: "切换主题（浅色 / 深色 / 跟随系统）",
+      icon: "i-lucide-sun-moon",
+      onSelect: () => {
+        close();
+        cycleTheme();
+      },
+    },
+    {
+      label: `当前主题：${colorMode.value === "dark" ? "深色" : colorMode.value === "light" ? "浅色" : "跟随系统"}`,
+      icon: "i-lucide-palette",
+      onSelect: () => {
+        close();
+        go("/dashboard/settings");
+      },
+    },
+  ];
+
+  if (user) {
+    actions.push({
+      label: "新增链接",
+      icon: "i-lucide-plus",
+      onSelect: () => {
+        close();
+        go("/dashboard/links");
+      },
+    });
+  }
+
+  result.push({ id: "actions", label: "快捷操作", items: actions });
 
   if (links.length) {
     result.push({
@@ -74,6 +121,19 @@ const groups = computed<CommandPaletteGroup[]>(() => {
     });
   }
 
+  // 分类跳转：只列有 slug 的（无 slug 无法路由）
+  const catItems = flatCategories.value
+    .filter((c) => c.slug)
+    .map<CommandPaletteItem>((c) => ({
+      label: c.depth === 0 ? c.name : `↳ ${c.name}`,
+      description: "分类",
+      icon: "i-lucide-folder",
+      onSelect: () => go(`/category/${c.slug}`),
+    }));
+  if (catItems.length) {
+    result.push({ id: "categories", label: "分类", items: catItems });
+  }
+
   const pages: CommandPaletteItem[] = [
     { label: "首页", icon: "i-lucide-house", onSelect: () => go("/") },
   ];
@@ -87,6 +147,9 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       { label: "设置", icon: "i-lucide-settings-2", onSelect: () => go("/dashboard/settings") },
       { label: "账户管理", icon: "i-lucide-user-round", onSelect: () => go("/dashboard/account") },
     );
+    if (user.role === "admin") {
+      pages.push({ label: "用户管理", icon: "i-lucide-users", onSelect: () => go("/dashboard/users") });
+    }
   } else {
     pages.push({ label: "登录", icon: "i-lucide-log-in", onSelect: () => go("/login") });
   }
